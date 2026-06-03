@@ -1,17 +1,87 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import QRCode from '../components/QRCode';
+import { useGames } from '../hooks/useGames';
 
-const QUEUE_URL = `${window.location.origin}/queue/sound-voltex`;
-
-export default function HomePage() {
+function GameCard({ game }) {
+  const queueUrl = `${window.location.origin}/queue/${game.id}`;
   const [copied, setCopied] = useState(false);
 
   function copyLink() {
-    navigator.clipboard.writeText(QUEUE_URL);
+    navigator.clipboard.writeText(queueUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+
+  const cabinetBits = [
+    game.cabinetNumber != null && `CABINET ${game.cabinetNumber}`,
+    game.location,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <div className="card card-accent-cyan" style={{ textAlign: 'center' }}>
+      {cabinetBits && (
+        <div style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: '0.6rem',
+          letterSpacing: '0.2em',
+          color: 'var(--muted)',
+          marginBottom: '0.5rem',
+        }}>
+          {cabinetBits}
+        </div>
+      )}
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: '1.4rem',
+        fontWeight: 900,
+        color: 'var(--cyan)',
+        textShadow: '0 0 16px rgba(0,245,255,0.4)',
+        marginBottom: game.subtitle ? '0.25rem' : '1.5rem',
+        letterSpacing: '0.05em',
+      }}>
+        {game.name}
+      </div>
+      {game.subtitle && (
+        <div style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: '0.7rem',
+          color: 'var(--pink)',
+          letterSpacing: '0.12em',
+          marginBottom: '1.5rem',
+        }}>
+          {game.subtitle}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
+        <QRCode value={queueUrl} size={180} />
+      </div>
+
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: '0.55rem',
+        letterSpacing: '0.1em',
+        color: 'var(--muted)',
+        marginBottom: '1rem',
+      }}>
+        SCAN TO JOIN QUEUE
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Link to={`/queue/${game.id}`} className="btn btn-solid-cyan" style={{ textDecoration: 'none' }}>
+          Open Queue
+        </Link>
+        <button className="btn btn-ghost" onClick={copyLink}>
+          {copied ? '✓ Copied!' : 'Copy Link'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const { games, loading } = useGames();
 
   return (
     <main style={{ flex: 1, maxWidth: '720px', margin: '0 auto', padding: '3rem 1.5rem', width: '100%' }}>
@@ -45,52 +115,23 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* QR Card */}
-      <div className="card card-accent-cyan" style={{ textAlign: 'center', marginBottom: '2rem' }}>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '0.6rem',
-          letterSpacing: '0.2em',
-          color: 'var(--muted)',
-          marginBottom: '0.5rem',
-        }}>
-          CABINET 1 · MAIN FLOOR
+      {/* Game QR cards */}
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+          <div className="spinner" />
+          <p className="text-muted" style={{ fontFamily: 'var(--font-display)', fontSize: '0.6rem', letterSpacing: '0.15em' }}>LOADING</p>
         </div>
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '1.4rem',
-          fontWeight: 900,
-          color: 'var(--cyan)',
-          textShadow: '0 0 16px rgba(0,245,255,0.4)',
-          marginBottom: '1.5rem',
-          letterSpacing: '0.05em',
-        }}>
-          SOUND VOLTEX
+      ) : games.length === 0 ? (
+        <div style={{ textAlign: 'center', marginBottom: '2rem', color: 'var(--muted)' }}>
+          No games registered yet. Add one via <code>POST /api/games</code>.
         </div>
-
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
-          <QRCode value={QUEUE_URL} size={180} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginBottom: '2rem' }}>
+          {games.map(game => (
+            <GameCard key={game.id} game={game} />
+          ))}
         </div>
-
-        <div style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: '0.55rem',
-          letterSpacing: '0.1em',
-          color: 'var(--muted)',
-          marginBottom: '1rem',
-        }}>
-          SCAN TO JOIN QUEUE
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link to="/queue/sound-voltex" className="btn btn-solid-cyan" style={{ textDecoration: 'none' }}>
-            Open Queue
-          </Link>
-          <button className="btn btn-ghost" onClick={copyLink}>
-            {copied ? '✓ Copied!' : 'Copy Link'}
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* How it works */}
       <div>

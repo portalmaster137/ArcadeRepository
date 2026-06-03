@@ -13,6 +13,7 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   getMe: () => apiFetch('/auth/me'),
+  getGames: () => apiFetch('/api/games'),
   getQueue: (gameId) => apiFetch(`/api/games/${gameId}/queue`),
   joinQueue: (gameId) => apiFetch(`/api/games/${gameId}/queue/join`, { method: 'POST' }),
   leaveQueue: (gameId) => apiFetch(`/api/games/${gameId}/queue/leave`, { method: 'POST' }),

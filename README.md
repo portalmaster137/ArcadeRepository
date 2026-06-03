@@ -1,6 +1,6 @@
 # 🎮 Arcade Queue System
 
-A real-time queue app for arcade cabinets. Players scan a QR code to join the queue, log in with Discord, and get live updates when their turn is coming up.
+A real-time queue app for arcade cabinets. Players scan a QR code to join the queue, log in with Discord, and get live updates when their turn is coming up — including a flashy 60-second readiness timer at the head of the queue with a one-shot 2-minute extension.
 
 ## Stack
 

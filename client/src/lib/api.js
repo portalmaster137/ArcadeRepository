@@ -27,4 +27,6 @@ export const api = {
   }),
   markDone: (gameId) => apiFetch(`/api/games/${gameId}/queue/done`, { method: 'POST' }),
   getInvite: (gameId) => apiFetch(`/api/games/${gameId}/queue/invite`, { method: 'POST' }),
+  confirmReady: (gameId) => apiFetch(`/api/games/${gameId}/queue/confirm-ready`, { method: 'POST' }),
+  extendReady: (gameId) => apiFetch(`/api/games/${gameId}/queue/extend`, { method: 'POST' }),
 };

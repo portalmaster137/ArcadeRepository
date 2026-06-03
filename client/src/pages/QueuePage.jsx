@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import QueueEntry from '../components/QueueEntry';
 import PlayerControls from '../components/PlayerControls';
+import ReadyBanner from '../components/ReadyBanner';
 
 // "Finishing soon" alert banner for the next-up player(s)
 function FinishingSoonAlert() {
@@ -119,6 +120,17 @@ export default function QueuePage() {
   // For duets, this fires for both members of that slot.
   const isUserNext = userEntry && userSlotIndex === 1;
   const currentPlayerFinishing = queue[0]?.status === 'finishing';
+
+  // Head-slot readiness banner: show only when the current user is a member
+  // of the head slot AND the slot has an active readyDeadline. The slot's
+  // `readyDeadline` is null once the user confirms (status: 'playing') or
+  // for non-head slots, so this naturally hides itself in those cases.
+  const headSlot = queue[0] || null;
+  const isHeadMember = !!user && !!headSlot
+    && (headSlot.members || []).some(m => m.userId === user.id);
+  const showReadyBanner = isHeadMember
+    && !!headSlot?.readyDeadline
+    && headSlot?.status !== 'playing';
 
   // Est-wait: number of slots ahead of (and including) the next-to-play slot.
   // Solo: queue.length slots. Duet: ceil(queue.length / playersPerSlot) slots.
@@ -243,6 +255,11 @@ export default function QueuePage() {
           </div>
         )}
       </div>
+
+      {/* Head-of-queue readiness banner (60s window, optional +2min extension) */}
+      {showReadyBanner && (
+        <ReadyBanner slot={headSlot} gameId={gameId} />
+      )}
 
       {/* Alert for next-up group when current is finishing */}
       {isUserNext && currentPlayerFinishing && <FinishingSoonAlert />}

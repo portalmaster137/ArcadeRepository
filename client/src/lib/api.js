@@ -14,12 +14,17 @@ async function apiFetch(path, options = {}) {
 export const api = {
   getMe: () => apiFetch('/auth/me'),
   getGames: () => apiFetch('/api/games'),
+  getGroup: (groupId) => apiFetch(`/api/cabinet-groups/${groupId}`),
   getQueue: (gameId) => apiFetch(`/api/games/${gameId}/queue`),
-  joinQueue: (gameId) => apiFetch(`/api/games/${gameId}/queue/join`, { method: 'POST' }),
+  joinQueue: (gameId, body) => apiFetch(`/api/games/${gameId}/queue/join`, {
+    method: 'POST',
+    body: JSON.stringify(body || {}),
+  }),
   leaveQueue: (gameId) => apiFetch(`/api/games/${gameId}/queue/leave`, { method: 'POST' }),
   updateStatus: (gameId, status) => apiFetch(`/api/games/${gameId}/queue/status`, {
     method: 'POST',
     body: JSON.stringify({ status }),
   }),
   markDone: (gameId) => apiFetch(`/api/games/${gameId}/queue/done`, { method: 'POST' }),
+  getInvite: (gameId) => apiFetch(`/api/games/${gameId}/queue/invite`, { method: 'POST' }),
 };

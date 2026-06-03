@@ -2,12 +2,26 @@ import { useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from './Toast';
 
-export default function PlayerControls({ gameId, userQueueEntry, queue, onUpdate }) {
+export default function PlayerControls({ gameId, userQueueEntry, queue, playersPerSlot = 1, onUpdate }) {
   const [loading, setLoading] = useState(false);
+  const [copiedInvite, setCopiedInvite] = useState(false);
   const toast = useToast();
 
-  const isFirst = queue.length > 0 && queue[0].userId === userQueueEntry?.userId;
-  const myStatus = userQueueEntry?.status;
+  // Find the caller's slot in the queue (may be a duet slot with them as a member).
+  const mySlotIndex = userQueueEntry
+    ? queue.findIndex(s => s.id === userQueueEntry.id)
+    : -1;
+  const mySlot = mySlotIndex >= 0 ? queue[mySlotIndex] : userQueueEntry;
+
+  // "Current player" = the caller's userId appears in the head slot's members.
+  const isFirst = !!mySlot && mySlotIndex === 0;
+  const myStatus = mySlot?.status;
+
+  // Open invite seat: caller is in a duet slot that has fewer than playersPerSlot
+  // members AND an invite token (meaning they chose "pair with a specific person").
+  const hasOpenInviteSeat = !!mySlot
+    && mySlot.inviteToken
+    && (mySlot.members?.length || 0) < playersPerSlot;
 
   async function handle(action) {
     setLoading(true);
@@ -38,9 +52,21 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, onUpdate
     }
   }
 
-  if (!userQueueEntry) return null;
+  async function copyInviteLink() {
+    if (!mySlot?.inviteToken) return;
+    const link = `${window.location.origin}/queue/${gameId}?invite=${mySlot.inviteToken}`;
+    navigator.clipboard.writeText(link);
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 2000);
+  }
 
-  const nextPlayer = queue[1];
+  if (!mySlot) return null;
+
+  // The next slot in queue is what the "current player" sees as "up next".
+  const nextSlot = queue[mySlotIndex + 1] || null;
+  const nextPlayer = nextSlot?.members?.[0] || null;
+  const nextPartner = nextSlot?.members?.[1] || null;
+  const isNextDuet = (nextSlot?.members?.length || 0) > 1;
 
   return (
     <div className="card card-accent-cyan" style={{ marginTop: '1.5rem' }}>
@@ -95,8 +121,12 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, onUpdate
                   color: 'var(--muted)',
                   marginBottom: '0.5rem',
                 }}>
-                  <strong style={{ color: 'var(--yellow)' }}>{nextPlayer.globalName}</strong> is waiting next.
-                  Let them know you're wrapping up.
+                  <strong style={{ color: 'var(--yellow)' }}>{nextPlayer.globalName}</strong>
+                  {isNextDuet && nextPartner && (
+                    <> & <strong style={{ color: 'var(--yellow)' }}>{nextPartner.globalName}</strong></>
+                  )}{' '}
+                  {isNextDuet ? 'are' : 'is'} waiting next.
+                  Let {isNextDuet ? 'them' : (nextPlayer.globalName?.startsWith('s') || nextPlayer.globalName?.startsWith('S') ? 'them' : 'them')} know you're wrapping up.
                 </div>
               )}
 
@@ -162,7 +192,7 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, onUpdate
             border: '1px solid rgba(180,79,255,0.2)',
           }}>
             <div style={{ fontWeight: 600, color: 'var(--white)', marginBottom: '0.25rem' }}>
-              You're #{queue.findIndex(e => e.userId === userQueueEntry.userId) + 1} in the queue
+              You're #{mySlotIndex + 1} in the queue
             </div>
             {queue[0]?.status === 'finishing' ? (
               <div style={{ fontSize: '0.85rem', color: 'var(--yellow)', fontWeight: 600 }}>
@@ -174,6 +204,36 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, onUpdate
               </div>
             )}
           </div>
+
+          {hasOpenInviteSeat && (
+            <div style={{
+              padding: '0.75rem 1rem',
+              background: 'rgba(0,245,255,0.06)',
+              borderRadius: '4px',
+              border: '1px solid rgba(0,245,255,0.25)',
+            }}>
+              <div style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: '0.55rem',
+                color: 'var(--cyan)',
+                letterSpacing: '0.15em',
+                marginBottom: '0.4rem',
+              }}>
+                WAITING FOR YOUR PARTNER
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.75rem' }}>
+                Share this link with the friend you want to play with. They'll join your slot.
+              </p>
+              <button
+                className="btn btn-cyan w-full"
+                style={{ justifyContent: 'center' }}
+                onClick={copyInviteLink}
+              >
+                {copiedInvite ? '✓ Invite link copied!' : 'Copy Invite Link'}
+              </button>
+            </div>
+          )}
+
           <button
             className="btn btn-ghost"
             style={{ justifyContent: 'center' }}

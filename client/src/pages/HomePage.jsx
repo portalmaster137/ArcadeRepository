@@ -1,7 +1,78 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import QRCode from '../components/QRCode';
 import { useGames } from '../hooks/useGames';
+import { useCabinetGroups } from '../hooks/useCabinetGroups';
+
+function GroupCard({ group, games }) {
+  const queueUrl = `${window.location.origin}/queue/group/${group.id}`;
+  const [copied, setCopied] = useState(false);
+
+  function copyLink() {
+    navigator.clipboard.writeText(queueUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="card card-accent-cyan" style={{ textAlign: 'center' }}>
+      {group.location && (
+        <div style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: '0.6rem',
+          letterSpacing: '0.2em',
+          color: 'var(--muted)',
+          marginBottom: '0.5rem',
+        }}>
+          {group.location}
+        </div>
+      )}
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: '1.4rem',
+        fontWeight: 900,
+        color: 'var(--cyan)',
+        textShadow: '0 0 16px rgba(0,245,255,0.4)',
+        marginBottom: '0.5rem',
+        letterSpacing: '0.05em',
+      }}>
+        {group.name}
+      </div>
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: '0.6rem',
+        color: 'var(--pink)',
+        letterSpacing: '0.12em',
+        marginBottom: '1.5rem',
+      }}>
+        {games.length} CABINET{games.length === 1 ? '' : 'S'} · DUET
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
+        <QRCode value={queueUrl} size={180} />
+      </div>
+
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: '0.55rem',
+        letterSpacing: '0.1em',
+        color: 'var(--muted)',
+        marginBottom: '1rem',
+      }}>
+        SCAN TO JOIN QUEUE
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Link to={`/queue/group/${group.id}`} className="btn btn-solid-cyan" style={{ textDecoration: 'none' }}>
+          Open Queue
+        </Link>
+        <button className="btn btn-ghost" onClick={copyLink}>
+          {copied ? '✓ Copied!' : 'Copy Link'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function GameCard({ game }) {
   const queueUrl = `${window.location.origin}/queue/${game.id}`;
@@ -81,7 +152,28 @@ function GameCard({ game }) {
 }
 
 export default function HomePage() {
-  const { games, loading } = useGames();
+  const { games, loading: gamesLoading } = useGames();
+  const { groups, loading: groupsLoading } = useCabinetGroups();
+
+  // Build a list of cards: one per group, plus one per ungrouped game.
+  const cards = useMemo(() => {
+    const groupIds = new Set(groups.map(g => g.id));
+    const cards = [];
+    for (const g of groups) {
+      const memberGames = (g.gameIds || [])
+        .map(id => games.find(game => game.id === id))
+        .filter(Boolean);
+      cards.push({ type: 'group', group: g, games: memberGames });
+    }
+    for (const game of games) {
+      if (!game.groupId || !groupIds.has(game.groupId)) {
+        cards.push({ type: 'game', game });
+      }
+    }
+    return cards;
+  }, [games, groups]);
+
+  const loading = gamesLoading || groupsLoading;
 
   return (
     <main style={{ flex: 1, maxWidth: '720px', margin: '0 auto', padding: '3rem 1.5rem', width: '100%' }}>
@@ -115,20 +207,22 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* Game QR cards */}
+      {/* Game / Group QR cards */}
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
           <div className="spinner" />
           <p className="text-muted" style={{ fontFamily: 'var(--font-display)', fontSize: '0.6rem', letterSpacing: '0.15em' }}>LOADING</p>
         </div>
-      ) : games.length === 0 ? (
+      ) : cards.length === 0 ? (
         <div style={{ textAlign: 'center', marginBottom: '2rem', color: 'var(--muted)' }}>
           No games registered yet. Add one via <code>POST /api/games</code>.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginBottom: '2rem' }}>
-          {games.map(game => (
-            <GameCard key={game.id} game={game} />
+          {cards.map(card => (
+            card.type === 'group'
+              ? <GroupCard key={`group-${card.group.id}`} group={card.group} games={card.games} />
+              : <GameCard key={`game-${card.game.id}`} game={card.game} />
           ))}
         </div>
       )}
@@ -150,7 +244,7 @@ export default function HomePage() {
             { icon: '📱', title: 'Scan', desc: 'Scan the QR code at the cabinet with your phone' },
             { icon: '🎮', title: 'Queue Up', desc: 'Log in with Discord and join the queue in one tap' },
             { icon: '⚡', title: 'Get Notified', desc: "When you're up next, you'll see a live alert" },
-            { icon: '🏆', title: 'Play', desc: 'Press "I\'ve Started!" and enjoy your game!' },
+            { icon: '🏏', title: 'Play', desc: 'Press "I\'ve Started!" and enjoy your game!' },
           ].map((step, i) => (
             <div key={i} style={{
               background: 'var(--surface)',

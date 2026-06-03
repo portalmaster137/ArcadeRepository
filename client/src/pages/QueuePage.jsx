@@ -1,5 +1,5 @@
-import { useParams, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useQueue } from '../hooks/useQueue';
 import { api } from '../lib/api';
@@ -7,8 +7,8 @@ import { useToast } from '../components/Toast';
 import QueueEntry from '../components/QueueEntry';
 import PlayerControls from '../components/PlayerControls';
 
-// "Finishing soon" alert banner for the next-up player
-function FinishingSoonAlert({ nextPlayer }) {
+// "Finishing soon" alert banner for the next-up player(s)
+function FinishingSoonAlert() {
   const [visible, setVisible] = useState(true);
   if (!visible) return null;
   return (
@@ -31,11 +31,53 @@ function FinishingSoonAlert({ nextPlayer }) {
             GET READY
           </div>
           <div style={{ fontWeight: 600, color: 'var(--white)' }}>
-            The current player is almost done. Head to the cabinet!
+            The current group is almost done. Head to the cabinet!
           </div>
         </div>
       </div>
       <button onClick={() => setVisible(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1.2rem' }}>×</button>
+    </div>
+  );
+}
+
+// "How are you playing?" prompt shown when playersPerSlot > 1
+function FormationPrompt({ onChoose, disabled }) {
+  return (
+    <div style={{ marginBottom: '1rem' }}>
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: '0.6rem',
+        letterSpacing: '0.15em',
+        color: 'var(--muted)',
+        marginBottom: '0.75rem',
+        textAlign: 'center',
+      }}>
+        HOW ARE YOU PLAYING?
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <button
+          className="btn btn-solid-cyan"
+          style={{ justifyContent: 'center', padding: '1rem', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}
+          onClick={() => onChoose('open')}
+          disabled={disabled}
+        >
+          <span style={{ fontSize: '0.75rem' }}>🎲 PAIR WITH ANYONE</span>
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.8rem', fontWeight: 500, color: 'rgba(0,0,0,0.7)', textTransform: 'none', letterSpacing: 0 }}>
+            Get matched with the next person who picks this.
+          </span>
+        </button>
+        <button
+          className="btn btn-pink"
+          style={{ justifyContent: 'center', padding: '1rem', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}
+          onClick={() => onChoose('invite')}
+          disabled={disabled}
+        >
+          <span style={{ fontSize: '0.75rem' }}>👯 PAIR WITH A FRIEND</span>
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.8rem', fontWeight: 500, color: 'rgba(255,255,255,0.7)', textTransform: 'none', letterSpacing: 0 }}>
+            We'll give you a link to share with the person you want to play with.
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -45,18 +87,77 @@ export default function QueuePage() {
   const { user, loading: authLoading, login } = useAuth();
   const { queue, game, loading: queueLoading } = useQueue(gameId);
   const toast = useToast();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [joining, setJoining] = useState(false);
 
-  const userEntry = user ? queue.find(e => e.userId === user.id) : null;
-  const isUserNext = user && queue.length >= 2 && queue[1]?.userId === user.id;
+  const playersPerSlot = game?.playersPerSlot || 1;
+  const isDuetGame = playersPerSlot > 1;
+
+  // Find the caller's slot (by membership, not top-level userId) — and its index.
+  const userEntry = useMemo(() => {
+    if (!user) return null;
+    return queue.find(s => (s.members || []).some(m => m.userId === user.id)) || null;
+  }, [user, queue]);
+
+  const userSlotIndex = userEntry
+    ? queue.findIndex(s => s.id === userEntry.id)
+    : -1;
+
+  // "User is up next" = they are a member of the slot at index 1.
+  // For duets, this fires for both members of that slot.
+  const isUserNext = userEntry && userSlotIndex === 1;
   const currentPlayerFinishing = queue[0]?.status === 'finishing';
 
-  async function joinQueue() {
+  // Est-wait: number of slots ahead of (and including) the next-to-play slot.
+  // Solo: queue.length slots. Duet: ceil(queue.length / playersPerSlot) slots.
+  const estWait = queue.length === 0
+    ? null
+    : Math.ceil(queue.length / playersPerSlot) * 5;
+
+  // ── Auto-consume invite token on first load ──
+  useEffect(() => {
+    if (authLoading || !user || !game) return;
+    const token = searchParams.get('invite');
+    if (!token || userEntry) {
+      // Either no invite, or already queued — clear the query param.
+      if (token) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('invite');
+        setSearchParams(next, { replace: true });
+      }
+      return;
+    }
+    // Attempt to join with the invite.
+    (async () => {
+      setJoining(true);
+      try {
+        await api.joinQueue(gameId, { inviteToken: token });
+        toast('Joined your friend\'s slot!', 'success');
+        const next = new URLSearchParams(searchParams);
+        next.delete('invite');
+        setSearchParams(next, { replace: true });
+      } catch (err) {
+        const msg = err.status === 400
+          ? 'This invite link is invalid or has expired.'
+          : (err.message || 'Could not join with invite');
+        toast(msg, 'error');
+        const next = new URLSearchParams(searchParams);
+        next.delete('invite');
+        setSearchParams(next, { replace: true });
+      } finally {
+        setJoining(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user, game, userEntry?.id]);
+
+  async function joinQueue(formation = 'open') {
     if (!user) return login();
     setJoining(true);
     try {
-      await api.joinQueue(gameId);
-      toast('Joined the queue!', 'success');
+      await api.joinQueue(gameId, { formation });
+      toast(formation === 'invite' ? 'Slot held — share the invite link below.' : 'Joined the queue!', 'success');
     } catch (err) {
       if (err.error === 'already_queued') {
         toast(`You're already queued for ${err.gameName}. Leave that queue first.`, 'error');
@@ -97,7 +198,11 @@ export default function QueuePage() {
           color: 'var(--muted)',
           marginBottom: '0.4rem',
         }}>
-          CABINET {game.cabinetNumber} · {game.location}
+          {[
+            game.cabinetNumber != null && `CABINET ${game.cabinetNumber}`,
+            game.location,
+            isDuetGame && `DUET (${playersPerSlot}P/SLOT)`,
+          ].filter(Boolean).join(' · ')}
         </div>
         <h1 style={{
           fontFamily: 'var(--font-display)',
@@ -123,10 +228,8 @@ export default function QueuePage() {
         )}
       </div>
 
-      {/* Alert for next-up player when current is finishing */}
-      {isUserNext && currentPlayerFinishing && (
-        <FinishingSoonAlert />
-      )}
+      {/* Alert for next-up group when current is finishing */}
+      {isUserNext && currentPlayerFinishing && <FinishingSoonAlert />}
 
       {/* Queue stats */}
       <div style={{
@@ -151,7 +254,7 @@ export default function QueuePage() {
             {queue.length}
           </div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.55rem', color: 'var(--muted)', letterSpacing: '0.1em' }}>
-            IN QUEUE
+            {isDuetGame ? 'PLAYERS' : 'IN QUEUE'}
           </div>
         </div>
         <div style={{
@@ -167,7 +270,7 @@ export default function QueuePage() {
             fontWeight: 900,
             color: queue.length === 0 ? 'var(--cyan)' : 'var(--yellow)',
           }}>
-            {queue.length === 0 ? '—' : `~${queue.length * 5}m`}
+            {estWait == null ? '—' : `~${estWait}m`}
           </div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.55rem', color: 'var(--muted)', letterSpacing: '0.1em' }}>
             EST. WAIT
@@ -208,10 +311,10 @@ export default function QueuePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {queue.map((entry, i) => (
               <QueueEntry
-                key={entry.userId}
+                key={entry.id}
                 entry={entry}
                 position={i + 1}
-                isCurrentUser={user?.id === entry.userId}
+                isCurrentUser={!!userEntry && entry.id === userEntry.id}
                 isFirst={i === 0}
               />
             ))}
@@ -219,19 +322,29 @@ export default function QueuePage() {
         )}
       </div>
 
-      {/* Join button or player controls */}
+      {/* Join flow or player controls */}
       {userEntry ? (
         <PlayerControls
           gameId={gameId}
           userQueueEntry={userEntry}
           queue={queue}
+          playersPerSlot={playersPerSlot}
         />
+      ) : isDuetGame ? (
+        <div>
+          <FormationPrompt onChoose={joinQueue} disabled={joining} />
+          {!user && (
+            <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.75rem' }}>
+              You'll be asked to log in with Discord
+            </p>
+          )}
+        </div>
       ) : (
         <div>
           <button
             className={`btn ${queue.length === 0 ? 'btn-solid-cyan pulse-cyan' : 'btn-cyan'}`}
             style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
-            onClick={joinQueue}
+            onClick={() => joinQueue('open')}
             disabled={joining}
           >
             {joining ? 'Joining...' : queue.length === 0 ? '▶ Play Now' : 'Join Queue'}

@@ -255,6 +255,8 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
     const isDuet = playersPerSlot > 1;
     const newSlot = {
       mode: isDuet ? 'duet' : 'solo',
+      playersPerSlot,                    // denormalized from the game so the slot
+                                         // is self-describing for status/leave checks
       members: [member],
       status: 'waiting',
       // Authoritative timestamp for queue ordering. Lives at the slot level
@@ -336,7 +338,8 @@ app.post('/api/games/:gameId/queue/status', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Only the current player can update status' });
     }
     // A half-filled duet slot can't start yet — the user is still waiting on a partner.
-    if ((head.members || []).length < (Number.isInteger(head.playersPerSlot) || 2)) {
+    const requiredMembers = Number.isInteger(head.playersPerSlot) ? head.playersPerSlot : 1;
+    if ((head.members || []).length < requiredMembers) {
       return res.status(409).json({ error: 'slot_not_full', message: 'Waiting for your partner to join.' });
     }
 
@@ -386,7 +389,8 @@ app.post('/api/games/:gameId/queue/invite', requireAuth, async (req, res) => {
       const data = slotDoc.data();
       const isMine = (data.members || []).some(m => m.userId === userId);
       if (!isMine) continue;
-      const isIncomplete = (data.members || []).length < (Number.isInteger(data.playersPerSlot) || 2);
+      const requiredMembers = Number.isInteger(data.playersPerSlot) ? data.playersPerSlot : 1;
+      const isIncomplete = (data.members || []).length < requiredMembers;
       if (!isIncomplete) continue;
       const needsInvite = !!data.inviteToken; // already invite-mode
       if (!needsInvite) continue;

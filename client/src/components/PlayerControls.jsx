@@ -17,6 +17,13 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
   const isFirst = !!mySlot && mySlotIndex === 0;
   const myStatus = mySlot?.status;
 
+  // A slot is "ready" once it has all its seats filled. Solo slots are
+  // always ready (1/1). Half-filled duet slots should NOT show the
+  // "I've Started!" button — the user is still waiting on their partner.
+  const slotIsFull = !!mySlot
+    && (mySlot.members?.length || 0) >= playersPerSlot;
+  const canStartGame = isFirst && slotIsFull;
+
   // Open invite seat: caller is in a duet slot that has fewer than playersPerSlot
   // members AND an invite token (meaning they chose "pair with a specific person").
   const hasOpenInviteSeat = !!mySlot
@@ -80,7 +87,37 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
         YOUR CONTROLS
       </div>
 
-      {isFirst ? (
+      {hasOpenInviteSeat && (
+        <div style={{
+          padding: '0.75rem 1rem',
+          background: 'rgba(0,245,255,0.06)',
+          borderRadius: '4px',
+          border: '1px solid rgba(0,245,255,0.25)',
+          marginBottom: '0.75rem',
+        }}>
+          <div style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '0.55rem',
+            color: 'var(--cyan)',
+            letterSpacing: '0.15em',
+            marginBottom: '0.4rem',
+          }}>
+            WAITING FOR YOUR PARTNER
+          </div>
+          <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.75rem' }}>
+            Share this link with the friend you want to play with. They'll join your slot.
+          </p>
+          <button
+            className="btn btn-cyan w-full"
+            style={{ justifyContent: 'center' }}
+            onClick={copyInviteLink}
+          >
+            {copiedInvite ? '✓ Invite link copied!' : 'Copy Invite Link'}
+          </button>
+        </div>
+      )}
+
+      {canStartGame ? (
         <div>
           {/* ── Current player UI ── */}
           {myStatus === 'waiting' && (
@@ -204,35 +241,6 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
               </div>
             )}
           </div>
-
-          {hasOpenInviteSeat && (
-            <div style={{
-              padding: '0.75rem 1rem',
-              background: 'rgba(0,245,255,0.06)',
-              borderRadius: '4px',
-              border: '1px solid rgba(0,245,255,0.25)',
-            }}>
-              <div style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '0.55rem',
-                color: 'var(--cyan)',
-                letterSpacing: '0.15em',
-                marginBottom: '0.4rem',
-              }}>
-                WAITING FOR YOUR PARTNER
-              </div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.75rem' }}>
-                Share this link with the friend you want to play with. They'll join your slot.
-              </p>
-              <button
-                className="btn btn-cyan w-full"
-                style={{ justifyContent: 'center' }}
-                onClick={copyInviteLink}
-              >
-                {copiedInvite ? '✓ Invite link copied!' : 'Copy Invite Link'}
-              </button>
-            </div>
-          )}
 
           <button
             className="btn btn-ghost"

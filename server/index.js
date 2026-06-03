@@ -335,6 +335,10 @@ app.post('/api/games/:gameId/queue/status', requireAuth, async (req, res) => {
     if (!(head.members || []).some(m => m.userId === userId)) {
       return res.status(403).json({ error: 'Only the current player can update status' });
     }
+    // A half-filled duet slot can't start yet — the user is still waiting on a partner.
+    if ((head.members || []).length < (Number.isInteger(head.playersPerSlot) || 2)) {
+      return res.status(409).json({ error: 'slot_not_full', message: 'Waiting for your partner to join.' });
+    }
 
     await db.collection('games').doc(gameId)
       .collection('queue').doc(head.id).update({ status });

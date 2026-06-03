@@ -195,7 +195,12 @@ export default function GroupQueuePage() {
     setJoining(true);
     try {
       await api.joinQueue(gameId, { formation });
-      toast(formation === 'invite' ? 'Slot held — share the invite link below.' : 'Joined the queue!', 'success');
+      const msg = formation === 'invite'
+        ? 'Slot held — share the invite link below.'
+        : formation === 'solo'
+          ? 'Slot reserved for solo play. Approach the cabinet when it\'s your turn!'
+          : 'Joined the queue!';
+      toast(msg, 'success');
     } catch (err) {
       if (err.error === 'already_queued') {
         toast(`You're already queued for ${err.gameName}. Leave that queue first.`, 'error');
@@ -298,24 +303,44 @@ export default function GroupQueuePage() {
               const state = gamesState[gid];
               if (!state?.game) return null;
               const isDuet = (state.game.playersPerSlot || 1) > 1;
+              const cabinetLabel = `CABINET ${state.game.cabinetNumber}`;
               return (
-                <div key={gid} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <div key={gid} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: '0.6rem',
+                    letterSpacing: '0.15em',
+                    color: 'var(--muted)',
+                    textAlign: 'center',
+                  }}>
+                    {cabinetLabel}
+                  </div>
+                  {isDuet && (
+                    <button
+                      className="btn btn-yellow"
+                      style={{ justifyContent: 'center' }}
+                      onClick={() => joinCabinet(gid, 'solo')}
+                      disabled={joining}
+                    >
+                      👤 Play Solo
+                    </button>
+                  )}
                   <button
                     className="btn btn-cyan"
-                    style={{ flex: 1, justifyContent: 'center' }}
+                    style={{ justifyContent: 'center' }}
                     onClick={() => joinCabinet(gid, 'open')}
                     disabled={joining}
                   >
-                    Cabinet {state.game.cabinetNumber} · Open
+                    🎲 Pair With Anyone
                   </button>
                   {isDuet && (
                     <button
                       className="btn btn-pink"
-                      style={{ flex: 1, justifyContent: 'center' }}
+                      style={{ justifyContent: 'center' }}
                       onClick={() => joinCabinet(gid, 'invite')}
                       disabled={joining}
                     >
-                      Cabinet {state.game.cabinetNumber} · Invite Friend
+                      👯 Pair With A Friend
                     </button>
                   )}
                 </div>

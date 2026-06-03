@@ -141,7 +141,7 @@ https://yourdomain.com/queue/sound-voltex
 2. Serve `client/dist` as static files from Express or a CDN
 3. Set `NODE_ENV=production` and update all URLs
 4. Add your production domain to Discord's OAuth redirect URLs
-5. Consider using `connect-session-firebase` for persistent sessions
+5. Sessions persist in the Firestore `sessions` collection via a small custom `express-session` Store in `server/session-store.js` — no further setup needed
 
 ---
 

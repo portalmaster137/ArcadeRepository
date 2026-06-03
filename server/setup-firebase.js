@@ -1,10 +1,34 @@
 /**
  * Run this once to seed your Firebase with the games and cabinet groups.
- * Usage: node setup-firebase.js
+ * Usage (dev):   node setup-firebase.js
+ * Usage (prod):  NODE_ENV=production node setup-firebase.js --confirm-prod
  */
 require('dotenv').config();
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+
+// Production guard: refuse to run against a production database unless the
+// caller passes an explicit --confirm-prod flag. The script uses .set()
+// (overwrite semantics), so an accidental re-run against production would
+// wipe any custom fields on the seeded games/groups. Both NODE_ENV and
+// the flag are required: the flag is useless without NODE_ENV=production,
+// and NODE_ENV=production is useless without the flag.
+const isProd = process.env.NODE_ENV === 'production';
+const allowProd = process.argv.includes('--confirm-prod');
+if (isProd && !allowProd) {
+  console.error('');
+  console.error('╔════════════════════════════════════════════════════════════╗');
+  console.error('║  REFUSING to seed against a production database.           ║');
+  console.error('║                                                            ║');
+  console.error('║  This script uses .set() (overwrite). Re-running it        ║');
+  console.error('║  against a production Firebase project will wipe any       ║');
+  console.error('║  custom fields on the seeded games/groups.                 ║');
+  console.error('║                                                            ║');
+  console.error('║  To proceed, pass the explicit --confirm-prod flag:        ║');
+  console.error('║  NODE_ENV=production node setup-firebase.js --confirm-prod ║');
+  console.error('╚════════════════════════════════════════════════════════════╝');
+  process.exit(2);
+}
 
 const app = initializeApp({
   credential: cert({
@@ -71,9 +95,13 @@ async function setup() {
   console.log('✅ Created cabinet group: maimai-pair-a');
 
   console.log('');
+  // Point at the production hostname when seeding prod; localhost otherwise.
+  // The dev URLs are the same as before; the prod URLs are the ones your QR
+  // codes will actually link to.
+  const host = isProd ? 'https://app.porta137.com' : 'http://localhost:5173';
   console.log('Your QR codes should link to:');
-  console.log('  http://localhost:5173/queue/sound-voltex  (solo)');
-  console.log('  http://localhost:5173/queue/group/maimai-pair-a  (paired duet)');
+  console.log(`  ${host}/queue/sound-voltex  (solo)`);
+  console.log(`  ${host}/queue/group/maimai-pair-a  (paired duet)`);
   console.log('');
   console.log('Done! You can now start the server.');
   process.exit(0);

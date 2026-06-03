@@ -65,8 +65,21 @@ passport.deserializeUser(async (id, done) => {
 // ── Express app ──────────────────────────────────────────────────────────────
 const app = express();
 
+// Trust the first reverse-proxy hop. In production, Caddy terminates TLS in
+// front of the API; without this, `req.secure` stays false and the
+// `cookie.secure: true` flag silently drops the session cookie. The value
+// `1` (not `true`) means "trust exactly one proxy hop" — safer than
+// `true`, which would trust the entire chain.
+app.set('trust proxy', 1);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL,
+  // Accept a single URL or a comma-separated list (for staging or local dev
+  // against the same deployment). `credentials: true` requires the response
+  // to echo back a specific origin, not `*`, so an array here is correct.
+  origin: (process.env.CLIENT_URL || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
   credentials: true,
 }));
 
@@ -81,12 +94,25 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    // SameSite=None is required for the session cookie to be sent on
+    // cross-subdomain requests (app.porta137.com → api.porta137.com).
+    // Browsers require `Secure` whenever `SameSite=None`, so the prod
+    // combo is `Secure + SameSite=None`; dev stays on `Lax` to keep
+    // localhost cookie behavior unchanged.
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   },
 }));
 
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Liveness probe for Docker / uptime monitors. Intentionally trivial — no
+// Firestore access, no auth — so it's safe to hit every few seconds and
+// stays healthy even if downstream services are degraded.
+app.get('/healthz', (req, res) => {
+  res.json({ ok: true });
+});
 
 // ── Auth middleware ──────────────────────────────────────────────────────────
 const requireAuth = (req, res, next) => {
@@ -680,7 +706,7 @@ app.post('/api/games', async (req, res) => {
 // ── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🎮 Arcade Queue server running on http://localhost:${PORT}`);
+  console.log(`🎮 Arcade Queue server listening on 0.0.0.0:${PORT}`);
 });
 
 // Rehydrate readiness timers from Firestore on startup. The in-process timer

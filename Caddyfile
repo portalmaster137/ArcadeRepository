@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Caddy configuration for porta137.com.
+#
+# Two vhosts:
+#   app.porta137.com  → serves the built SPA from /srv, with SPA fallback so
+#                       deep links like /queue/sound-voltex resolve to
+#                       index.html and the React Router takes over.
+#   api.porta137.com  → reverse-proxies to the api service on the internal
+#                       Docker network (port 3001).
+#
+# Caddy auto-provisions Let's Encrypt certs via the ACME directory the first
+# time each vhost is hit. No cert files to mount.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Static client ──
+app.porta137.com {
+    root * /srv
+    encode gzip zstd
+
+    # SPA fallback: any path that doesn't match a real file in /srv →
+    # index.html. Vite's content-addressed assets live under /assets/ and
+    # always match first, so the fallback only kicks in for client routes.
+    try_files {path} {path}/ /index.html
+
+    # Don't cache index.html itself — it has the script tag pointing at
+    # /assets/index-*.js, which is content-addressed. The script tag changes
+    # on every deploy, but the script body never does. Caching index.html
+    # would break deploys.
+    header Cache-Control "no-cache"
+    header X-Content-Type-Options "nosniff"
+
+    # Vite's /assets/* filenames are content-hashed, so they're safe to
+    # cache forever. This is the standard SPA cache strategy.
+    @assets path /assets/*
+    header @assets Cache-Control "public, max-age=31536000, immutable"
+}
+
+# ── API ──
+api.porta137.com {
+    reverse_proxy api:3001 {
+        # Pass the original Host and client IP up so the Express app sees
+        # the real request, not Caddy's internal one. X-Forwarded-Proto is
+        # what makes `req.secure` work in the API (paired with
+        # `app.set('trust proxy', 1)` in server/index.js).
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import { useToast } from '../components/Toast';
 import QueueEntry from '../components/QueueEntry';
 import PlayerControls from '../components/PlayerControls';
+import ReadyBanner from '../components/ReadyBanner';
 
 function CabinetSection({ game, user, userSlotId, onJoin, onLeave, joining, onUpdate }) {
   const queue = game.queue;
@@ -16,8 +17,22 @@ function CabinetSection({ game, user, userSlotId, onJoin, onLeave, joining, onUp
     : null;
   const isCurrentUserInThisCab = userSlotId === game.id;
 
+  // Head-of-queue readiness banner: scoped to the cabinet the user is on,
+  // shown only when they're a member of its head slot with an active deadline.
+  const headSlot = queue[0] || null;
+  const isHeadMember = isCurrentUserInThisCab
+    && !!user
+    && (headSlot?.members || []).some(m => m.userId === user.id);
+  const showReadyBanner = isHeadMember
+    && !!headSlot?.readyDeadline
+    && headSlot?.status !== 'playing';
+
   return (
     <section style={{ marginBottom: '2rem' }}>
+      {/* Head-of-queue readiness banner for THIS cabinet */}
+      {showReadyBanner && (
+        <ReadyBanner slot={headSlot} gameId={game.id} />
+      )}
       <div style={{
         fontFamily: 'var(--font-display)',
         fontSize: '0.6rem',

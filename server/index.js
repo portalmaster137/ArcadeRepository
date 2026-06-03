@@ -19,6 +19,11 @@ const firebaseApp = initializeApp({
 });
 const db = getFirestore(firebaseApp);
 
+// Persist sessions in Firestore so they survive server restarts.
+// The store lives in ./session-store.js and is a small custom express-session
+// Store class — no third-party dependency needed.
+const FirestoreSessionStore = require('./session-store');
+
 // ── Passport / Discord ───────────────────────────────────────────────────────
 const DiscordStrategy = require('passport-discord').Strategy;
 
@@ -68,9 +73,11 @@ app.use(cors({
 app.use(express.json());
 
 app.use(session({
+  store: new (FirestoreSessionStore(session, db))(),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  name: '__session',
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,

@@ -17,12 +17,12 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
   const isFirst = !!mySlot && mySlotIndex === 0;
   const myStatus = mySlot?.status;
 
-  // A slot is "ready" once it has all its seats filled. Solo slots are
-  // always ready (1/1). Half-filled duet slots should NOT show the
-  // "I've Started!" button — the user is still waiting on their partner.
+  // A slot is "ready" once it has all its seats filled. A solo-on-duet slot
+  // (mode: 'solo') is ready with just one member — the second seat is intentionally empty.
   const slotIsFull = !!mySlot
     && (mySlot.members?.length || 0) >= playersPerSlot;
-  const canStartGame = isFirst && slotIsFull;
+  const slotIsReady = mySlot?.mode === 'solo' || slotIsFull;
+  const canStartGame = isFirst && slotIsReady;
 
   // Open invite seat: caller is in a duet slot that has fewer than playersPerSlot
   // members AND an invite token (meaning they chose "pair with a specific person").
@@ -73,7 +73,10 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
   const nextSlot = queue[mySlotIndex + 1] || null;
   const nextPlayer = nextSlot?.members?.[0] || null;
   const nextPartner = nextSlot?.members?.[1] || null;
+  // A next-slot can be a full duet (2 members), a half-filled open/invite duet
+  // (1 member still waiting), or a solo-on-duet slot (1 member, ready to play).
   const isNextDuet = (nextSlot?.members?.length || 0) > 1;
+  const isNextSoloReady = nextSlot?.mode === 'solo';
 
   return (
     <div className="card card-accent-cyan" style={{ marginTop: '1.5rem' }}>
@@ -162,8 +165,8 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
                   {isNextDuet && nextPartner && (
                     <> & <strong style={{ color: 'var(--yellow)' }}>{nextPartner.globalName}</strong></>
                   )}{' '}
-                  {isNextDuet ? 'are' : 'is'} waiting next.
-                  Let {isNextDuet ? 'them' : (nextPlayer.globalName?.startsWith('s') || nextPlayer.globalName?.startsWith('S') ? 'them' : 'them')} know you're wrapping up.
+                  {isNextSoloReady ? 'is up next (playing solo).' : (isNextDuet ? 'are' : 'is') + ' waiting next.'}
+                  {' '}Let {isNextDuet ? 'them' : 'them'} know you're wrapping up.
                 </div>
               )}
 

@@ -195,7 +195,13 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
   try {
     const { gameId } = req.params;
     const userId = req.user.id;
-    const formation = req.body?.formation === 'invite' ? 'invite' : 'open';
+    // formation: 'open' (default for duet games — auto-pair with anyone),
+    //            'invite' (duet games — pair with a specific friend via token),
+    //            'solo'  (duet games — play alone on a single seat; one member fills the slot).
+    // 'solo' is only meaningful when playersPerSlot > 1. For solo games, any of the three
+    // values collapses to a 1-member solo slot.
+    const rawFormation = req.body?.formation;
+    const formation = ['open', 'invite', 'solo'].includes(rawFormation) ? rawFormation : 'open';
     const inviteToken = req.body?.inviteToken || null;
 
     const gameRef = db.collection('games').doc(gameId);
@@ -253,8 +259,12 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
 
     // ── First joiner path: create a new slot ──
     const isDuet = playersPerSlot > 1;
+    // A solo player on a duet cabinet is a complete slot (ready to play) — the
+    // other seat stays intentionally empty. We mark it mode: 'solo' so the
+    // status/leave checks know not to wait for a second member.
+    const isSoloOnDuetCab = isDuet && formation === 'solo';
     const newSlot = {
-      mode: isDuet ? 'duet' : 'solo',
+      mode: isSoloOnDuetCab ? 'solo' : (isDuet ? 'duet' : 'solo'),
       playersPerSlot,                    // denormalized from the game so the slot
                                          // is self-describing for status/leave checks
       members: [member],
@@ -265,10 +275,11 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
     };
 
     // If the user wants a specific invite partner, generate a token now.
+    // (Solo-on-duet doesn't generate a token — the second seat is intentionally empty.)
     if (formation === 'invite' && isDuet) {
       newSlot.inviteToken = newInviteToken();
       newSlot.inviteExpiresAt = new Date(Date.now() + INVITE_TTL_MS);
-    } else if (isDuet) {
+    } else if (formation === 'open' && isDuet) {
       // 'open' duet: try to auto-fill an existing open duet slot at the head of the queue.
       const head = await getHeadSlot(gameId);
       if (head && head.mode === 'duet'
@@ -281,7 +292,11 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
     }
 
     const newDocRef = await queueRef.add(newSlot);
-    return res.json({ success: true, joined: 'new_slot', slotId: newDocRef.id });
+    return res.json({
+      success: true,
+      joined: isSoloOnDuetCab ? 'solo' : 'new_slot',
+      slotId: newDocRef.id,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -337,8 +352,11 @@ app.post('/api/games/:gameId/queue/status', requireAuth, async (req, res) => {
     if (!(head.members || []).some(m => m.userId === userId)) {
       return res.status(403).json({ error: 'Only the current player can update status' });
     }
-    // A half-filled duet slot can't start yet — the user is still waiting on a partner.
-    const requiredMembers = Number.isInteger(head.playersPerSlot) ? head.playersPerSlot : 1;
+    // A slot is ready to play if it's marked mode: 'solo' (the player chose to play
+    // alone on a duet cabinet) OR if it has all its seats filled.
+    const requiredMembers = head.mode === 'solo'
+      ? 1
+      : (Number.isInteger(head.playersPerSlot) ? head.playersPerSlot : 1);
     if ((head.members || []).length < requiredMembers) {
       return res.status(409).json({ error: 'slot_not_full', message: 'Waiting for your partner to join.' });
     }

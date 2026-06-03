@@ -56,6 +56,17 @@ function FormationPrompt({ onChoose, disabled }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <button
+          className="btn btn-yellow"
+          style={{ justifyContent: 'center', padding: '1rem', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}
+          onClick={() => onChoose('solo')}
+          disabled={disabled}
+        >
+          <span style={{ fontSize: '0.75rem' }}>👤 PLAY SOLO</span>
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.8rem', fontWeight: 500, color: 'rgba(0,0,0,0.7)', textTransform: 'none', letterSpacing: 0 }}>
+            Take one of the two seats. The other seat stays empty.
+          </span>
+        </button>
+        <button
           className="btn btn-solid-cyan"
           style={{ justifyContent: 'center', padding: '1rem', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}
           onClick={() => onChoose('open')}
@@ -157,7 +168,12 @@ export default function QueuePage() {
     setJoining(true);
     try {
       await api.joinQueue(gameId, { formation });
-      toast(formation === 'invite' ? 'Slot held — share the invite link below.' : 'Joined the queue!', 'success');
+      const msg = formation === 'invite'
+        ? 'Slot held — share the invite link below.'
+        : formation === 'solo'
+          ? 'Slot reserved for solo play. Approach the cabinet when it\'s your turn!'
+          : 'Joined the queue!';
+      toast(msg, 'success');
     } catch (err) {
       if (err.error === 'already_queued') {
         toast(`You're already queued for ${err.gameName}. Leave that queue first.`, 'error');

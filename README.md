@@ -18,17 +18,9 @@ A real-time queue app for arcade cabinets. Players scan a QR code to join the qu
 1. Go to [console.firebase.google.com](https://console.firebase.google.com)
 2. Create a new project
 3. Go to **Firestore Database** → Create database → Start in production mode
-4. Add this security rule (allows reads, but only authenticated server can write):
-   ```
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /{document=**} {
-         allow read: if true;
-         allow write: if false;
-       }
-     }
-   }
+4. Apply the security rules from `firestore.rules` at the repo root (allows reads, blocks client writes; all mutations come from the server via the Admin SDK):
+   ```bash
+   firebase deploy --only firestore:rules
    ```
 5. Go to **Project Settings** → **Service accounts** → **Generate new private key**
    - This gives you a JSON file — you'll need values from it for the server `.env`
@@ -135,23 +127,115 @@ https://yourdomain.com/queue/sound-voltex
 
 ---
 
-## Production Deployment
+## Production Deployment (porta137.com)
 
-1. Build the client: `npm run build` (outputs to `client/dist`)
-2. Serve `client/dist` as static files from Express or a CDN
-3. Set `NODE_ENV=production` and update all URLs
-4. Add your production domain to Discord's OAuth redirect URLs
-5. Sessions persist in the Firestore `sessions` collection via a small custom `express-session` Store in `server/session-store.js` — no further setup needed
+The app is deployed as a Dockerized stack: a Caddy container terminates TLS and serves the built React client, and an `api` container runs the Express server. Caddy auto-provisions Let's Encrypt certs.
+
+**Architecture:**
+
+```
+app.porta137.com  →  Caddy  →  /srv   (built SPA)
+api.porta137.com  →  Caddy  →  api:3001  (Express + Firestore)
+```
+
+Sessions persist in the Firestore `sessions` collection via a small custom `express-session` Store in `server/session-store.js` — no further setup needed.
+
+### One-time setup
+
+**1. DNS.** At your domain registrar, add two CNAMEs pointing to the host you'll deploy to:
+- `app.porta137.com` → `<your-host>`
+- `api.porta137.com` → `<your-host>`
+
+**2. Host.** A Linux box with Docker + docker-compose installed. Open TCP 80 and 443. Caddy binds both; nothing else does.
+
+**3. Rotate secrets.** Before the first deploy, generate fresh values for production:
+```bash
+# New session signing key
+openssl rand -hex 32
+```
+- In the [Discord developer portal](https://discord.com/developers/applications), add a new OAuth redirect: `https://api.porta137.com/auth/discord/callback`. Keep the existing `http://localhost:3001/...` redirect for local dev.
+- Generate a new Firebase service account key (`Project Settings → Service accounts → Generate new private key`). Use the new JSON for the production `.env`.
+
+**4. Fill in `server/.env` for production:**
+```env
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_CALLBACK_URL=https://api.porta137.com/auth/discord/callback
+SESSION_SECRET=<paste the openssl rand -hex 32 output>
+
+FIREBASE_PROJECT_ID=
+FIREBASE_PRIVATE_KEY_ID=
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_CLIENT_ID=
+
+PORT=3001
+CLIENT_URL=https://app.porta137.com
+NODE_ENV=production
+```
+`CLIENT_URL` may be a comma-separated list (e.g. `https://app.porta137.com,http://localhost:5173` for staging).
+
+**5. Deploy Firestore rules** (one-time, from your local dev box):
+```bash
+npm install -g firebase-tools   # if not already
+firebase login
+firebase use --add <your-project-id>
+firebase deploy --only firestore:rules
+```
+
+**6. Seed production data.** The seed script has a guard: it requires both `NODE_ENV=production` AND an explicit `--confirm-prod` flag. Re-running it overwrites fields on the seeded games/groups — don't do that casually.
+```bash
+NODE_ENV=production npm run seed:prod
+# Equivalent: NODE_ENV=production node server/setup-firebase.js --confirm-prod
+```
+
+### Deploying
+
+**7. Bring up the stack:**
+```bash
+docker compose up -d --build
+docker compose logs -f api    # confirm the API started cleanly
+```
+Caddy will obtain Let's Encrypt certs on first request. Watch the caddy logs to confirm:
+```bash
+docker compose logs -f caddy
+```
+
+**8. Verify:**
+- `https://app.porta137.com/` → home page
+- `https://app.porta137.com/queue/sound-voltex` → queue page (SPA fallback should work on hard refresh)
+- `https://api.porta137.com/healthz` → `{"ok":true}`
+- Discord login → callback lands on `https://api.porta137.com/auth/discord/callback` → redirects to `https://app.porta137.com/?login=success`
+- Reload — still logged in (session cookie works across subdomains)
+- Join a queue, see the 60s readiness banner, confirm — slot transitions to `playing`
+
+**9. Subsequent deploys** (code changes only):
+```bash
+git pull
+docker compose up -d --build
+```
+
+### Optional but recommended
+
+- Point an uptime monitor (UptimeRobot, BetterStack, etc.) at `https://api.porta137.com/healthz`. Docker's built-in healthcheck pings it every 30s; an external monitor alerts you if the whole stack is down.
+- Set up Firestore backups (Firebase Console → Firestore → Backups). The seed script can recreate games/groups, but live queue state, sessions, and user records are not backed up anywhere else.
 
 ---
 
 ## Project Structure
 
 ```
-sdvx-queue/
+arcadequeue/
+├── Dockerfile              # Multi-stage: builds client, packages api + caddy
+├── docker-compose.yml      # Runs the api + caddy services
+├── Caddyfile               # app.* static + api.* reverse-proxy
+├── firestore.rules         # Firestore security rules (deploy with `firebase deploy`)
+├── firebase.json           # Firebase CLI config
+├── .dockerignore
 ├── server/
-│   ├── index.js          # Express server, auth, queue API
-│   ├── setup-firebase.js # One-time DB seeding
+│   ├── index.js            # Express server, auth, queue API
+│   ├── session-store.js    # Custom Firestore-backed express-session store
+│   ├── setup-firebase.js   # One-time DB seeding (with prod guard)
 │   ├── .env.example
 │   └── package.json
 └── client/
@@ -161,17 +245,20 @@ sdvx-queue/
     │   │   └── api.js        # API helpers
     │   ├── hooks/
     │   │   ├── useAuth.js    # Discord session state
+    │   │   ├── useGames.js   # Live games collection
     │   │   └── useQueue.js   # Real-time Firestore listener
     │   ├── components/
     │   │   ├── NavBar.jsx
     │   │   ├── QueueEntry.jsx
     │   │   ├── PlayerControls.jsx
+    │   │   ├── ReadyBanner.jsx
     │   │   ├── QRCode.jsx
     │   │   └── Toast.jsx
     │   ├── pages/
-    │   │   ├── HomePage.jsx  # Landing + QR display
-    │   │   └── QueuePage.jsx # Main queue view
-    │   └── index.css         # Neon arcade theme
+    │   │   ├── HomePage.jsx      # Landing + QR display
+    │   │   ├── QueuePage.jsx     # Main queue view
+    │   │   └── GroupQueuePage.jsx# Paired-cabinet group view
+    │   └── index.css             # Neon arcade theme
     ├── index.html
     ├── vite.config.js
     ├── .env.example

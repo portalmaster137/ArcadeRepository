@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
     "build": "npm run build --workspace=client",
-    "start": "npm run start --workspace=server"
+    "start": "npm run start --workspace=server",
+    "seed": "node server/setup-firebase.js",
+    "seed:prod": "node server/setup-firebase.js --confirm-prod"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

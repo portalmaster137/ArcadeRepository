@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast';
 import QueueEntry from '../components/QueueEntry';
 import PlayerControls from '../components/PlayerControls';
 import ReadyBanner from '../components/ReadyBanner';
+import WaitingForPartner from '../components/WaitingForPartner';
 
 function CabinetSection({ game, user, userSlotId, onJoin, onLeave, joining, onUpdate }) {
   const queue = game.queue;
@@ -27,8 +28,23 @@ function CabinetSection({ game, user, userSlotId, onJoin, onLeave, joining, onUp
     && !!headSlot?.readyDeadline
     && headSlot?.status !== 'playing';
 
+  // "Waiting for partner" banner: scoped to this cabinet, shown only when the
+  // user is the lone member of a half-filled duet head slot. Mutually
+  // exclusive with showReadyBanner (a slot has a readyDeadline IFF it is
+  // playable, and this is the inverse).
+  const cabinetPlayersPerSlot = game.playersPerSlot || 1;
+  const isHalfFilledDuetHead = isHeadMember
+    && headSlot?.mode === 'duet'
+    && (headSlot?.members?.length || 0) < cabinetPlayersPerSlot;
+  const showWaitingBanner = isHalfFilledDuetHead;
+
   return (
     <section style={{ marginBottom: '2rem' }}>
+      {/* "Waiting for partner" banner: lone member of a half-filled duet
+          head slot on THIS cabinet. */}
+      {showWaitingBanner && (
+        <WaitingForPartner slot={headSlot} />
+      )}
       {/* Head-of-queue readiness banner for THIS cabinet */}
       {showReadyBanner && (
         <ReadyBanner slot={headSlot} gameId={game.id} />

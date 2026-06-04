@@ -34,7 +34,11 @@ RUN npm run build --workspace=client
 FROM node:20-alpine AS server-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY server/package.json ./server/
+# Copy the whole server workspace (manifest + source) so the api stage
+# can pull both the resolved node_modules and the actual server files
+# from this stage. Without the source, /app/server in this stage is just
+# package.json, and the api image has no index.js to run.
+COPY server/ ./server/
 RUN npm ci --no-audit --no-fund --workspace=server --include-workspace-root=false
 
 # ── Stage 3: final API image ────────────────────────────────────────────────

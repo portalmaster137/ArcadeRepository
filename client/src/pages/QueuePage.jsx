@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import QueueEntry from '../components/QueueEntry';
 import PlayerControls from '../components/PlayerControls';
 import ReadyBanner from '../components/ReadyBanner';
+import WaitingForPartner from '../components/WaitingForPartner';
 
 // "Finishing soon" alert banner for the next-up player(s)
 function FinishingSoonAlert() {
@@ -132,6 +133,15 @@ export default function QueuePage() {
     && !!headSlot?.readyDeadline
     && headSlot?.status !== 'playing';
 
+  // "Waiting for partner" banner: shown only when the user is the sole member
+  // of a half-filled duet head slot. By the server's slotIsPlayable contract,
+  // such a slot has no readyDeadline, so this is mutually exclusive with
+  // showReadyBanner — a slot matches one or the other, never both.
+  const isHalfFilledDuetHead = isHeadMember
+    && headSlot?.mode === 'duet'
+    && (headSlot?.members?.length || 0) < playersPerSlot;
+  const showWaitingBanner = isHalfFilledDuetHead;
+
   // Est-wait: number of slots ahead of (and including) the next-to-play slot.
   // Solo: queue.length slots. Duet: ceil(queue.length / playersPerSlot) slots.
   const estWait = queue.length === 0
@@ -255,6 +265,13 @@ export default function QueuePage() {
           </div>
         )}
       </div>
+
+      {/* "Waiting for partner" banner: shown for the lone member of a
+          half-filled duet head slot. Takes precedence over ReadyBanner (which
+          is the playable-slot 60s window). */}
+      {showWaitingBanner && (
+        <WaitingForPartner slot={headSlot} />
+      )}
 
       {/* Head-of-queue readiness banner (60s window, optional +2min extension) */}
       {showReadyBanner && (

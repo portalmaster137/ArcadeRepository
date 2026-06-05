@@ -57,10 +57,3 @@ COPY --from=client-build /repo/client/dist ./client/dist
 EXPOSE 3001
 USER node
 CMD ["node", "server/index.js"]
-
-# ── Stage 4: Caddy with the built static client ─────────────────────────────
-# Caddy auto-provisions Let's Encrypt certs and reverse-proxies the API.
-# /srv holds the built SPA; Caddyfile routes app.* to it and api.* to api:3001.
-FROM caddy:2-alpine AS caddy
-COPY Caddyfile /etc/caddy/Caddyfile
-COPY --from=client-build /repo/client/dist /srv

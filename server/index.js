@@ -80,7 +80,7 @@ app.use(cors({
     .split(',')
     .map(s => s.trim())
     .filter(Boolean),
-  credentials: true,
+  credentials: false,
 }));
 
 app.use(express.json());

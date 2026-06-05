@@ -15,17 +15,36 @@
 # into the bundle at build time). It defaults to https://api.porta137.com;
 # override with `--build-arg VITE_API_URL=...` for staging or local prod runs.
 FROM node:20-alpine AS client-build
-ARG VITE_API_URL=https://api.porta137.com
-ENV VITE_API_URL=$VITE_API_URL
-WORKDIR /repo
-# Copy the workspace plumbing first (root manifests + the two workspace
-# manifests) so npm can resolve the workspaces before touching the source.
-COPY package.json package-lock.json ./
-COPY client/package.json ./client/
-RUN npm ci --no-audit --no-fund --workspace=client --include-workspace-root=false
-# Now copy the client source and build.
-COPY client/ ./client/
-RUN npm run build --workspace=client
+  # VITE_API_URL is a build-time variable (Vite bakes import.meta.env values
+  # into the bundle at build time). It defaults to https://api.porta137.com;
+  # override with `--build-arg VITE_API_URL=...` for staging or local prod runs.
+  ARG VITE_API_URL=https://api.porta137.com
+  # Firebase config must also be baked in at build time (Vite inlines
+  # `import.meta.env.VITE_*` into the bundle). Without these, the deployed
+  # bundle ends up with `apiKey: void 0, projectId: void 0, ...` and the
+  # Firestore listeners throw on first read, leaving the page blank.
+  ARG VITE_FIREBASE_API_KEY
+  ARG VITE_FIREBASE_AUTH_DOMAIN
+  ARG VITE_FIREBASE_PROJECT_ID
+  ARG VITE_FIREBASE_STORAGE_BUCKET
+  ARG VITE_FIREBASE_MESSAGING_SENDER_ID
+  ARG VITE_FIREBASE_APP_ID
+  ENV VITE_API_URL=$VITE_API_URL \
+      VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
+      VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN \
+      VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID \
+      VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET \
+      VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID \
+      VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
+  WORKDIR /repo
+  # Copy the workspace plumbing first (root manifests + the two workspace
+  # manifests) so npm can resolve the workspaces before touching the source.
+  COPY package.json package-lock.json ./
+  COPY client/package.json ./client/
+  RUN npm ci --no-audit --no-fund --workspace=client --include-workspace-root=false
+  # Now copy the client source and build.
+  COPY client/ ./client/
+  RUN npm run build --workspace=client
 
 # ── Stage 2: install production deps for the server ─────────────────────────
 # Same workspace trick, but --omit=dev strips the test-only deps. Note: we

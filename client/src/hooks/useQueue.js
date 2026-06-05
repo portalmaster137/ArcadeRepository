@@ -10,12 +10,23 @@ export function useQueue(gameId) {
   useEffect(() => {
     if (!gameId) return;
 
-    // Listen to game document
-    const gameUnsub = onSnapshot(doc(db, 'games', gameId), (snap) => {
-      if (snap.exists()) {
-        setGame({ id: snap.id, ...snap.data() });
+    // Listen to game document. The page renders a 404 if `game` ends up null
+    // while `loading` is false, so we must flip `loading` off the moment the
+    // game-doc snapshot resolves (either to a doc or to a confirmed absence).
+    // Without this, a missing/renamed game doc leaves the page on its spinner
+    // indefinitely, because the queue-subcollection listener on its own only
+    // fires when there are entries to read.
+    const gameUnsub = onSnapshot(
+      doc(db, 'games', gameId),
+      (snap) => {
+        setGame(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('useQueue: game snapshot error', err);
+        setLoading(false);
       }
-    });
+    );
 
     // Listen to queue subcollection, ordered by joinedAt
     const queueQuery = query(

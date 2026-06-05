@@ -76,7 +76,7 @@ app.use(cors({
   // Accept a single URL or a comma-separated list (for staging or local dev
   // against the same deployment). `credentials: true` requires the response
   // to echo back a specific origin, not `*`, so an array here is correct.
-  origin: (process.env.CLIENT_URL || '')
+  origin: ('https://app.porta137.com')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean),

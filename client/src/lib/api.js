@@ -3,7 +3,7 @@ const BASE = import.meta.env.VITE_API_URL || '';
 async function apiFetch(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin':'https://api.porta137.com', ...options.headers },
     ...options,
   });
   const data = await res.json();

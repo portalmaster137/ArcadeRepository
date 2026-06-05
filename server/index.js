@@ -70,7 +70,18 @@ const app = express();
 // `cookie.secure: true` flag silently drops the session cookie. The value
 // `1` (not `true`) means "trust exactly one proxy hop" — safer than
 // `true`, which would trust the entire chain.
+app.set('trust proxy', 1);
 
+app.use(cors({
+  // Accept a single URL or a comma-separated list (for staging or local dev
+  // against the same deployment). `credentials: true` requires the response
+  // to echo back a specific origin, not `*`, so an array here is correct.
+  origin: ('https://app.porta137.com')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
+  credentials: true,
+}));
 
 app.use(express.json());
 

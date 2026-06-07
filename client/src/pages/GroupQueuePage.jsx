@@ -207,6 +207,20 @@ export default function GroupQueuePage() {
     return () => unsubs.forEach(u => u());
   }, [group]);
 
+  // ── Lazy-void keepalive ──
+  // Hit the server's GET /api/tick every 30s so any head whose readiness
+  // deadline has passed is auto-voided across all cabinets in this group.
+  // The server's getHeadSlotLive is what does the work; this is just the
+  // trigger. Mount cleanup clears the interval.
+  useEffect(() => {
+    const id = setInterval(() => {
+      api.tick().catch((err) => {
+        console.warn('tick keepalive failed', err);
+      });
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
+
   // Find which cabinet (if any) the user is queued on.
   const userSlotId = useMemo(() => {
     if (!user) return null;

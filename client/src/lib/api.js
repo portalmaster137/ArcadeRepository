@@ -28,4 +28,8 @@ export const api = {
   getInvite: (gameId) => apiFetch(`/api/games/${gameId}/queue/invite`, { method: 'POST' }),
   confirmReady: (gameId) => apiFetch(`/api/games/${gameId}/queue/confirm-ready`, { method: 'POST' }),
   extendReady: (gameId) => apiFetch(`/api/games/${gameId}/queue/extend`, { method: 'POST' }),
+  // Server-side lazy-void keepalive. The server uses this to void any head
+  // whose readyDeadline has passed — see server/index.js GET /api/tick.
+  // Polled on a 30s interval by the queue pages while open.
+  tick: () => apiFetch('/api/tick'),
 };

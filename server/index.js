@@ -8,7 +8,10 @@ const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 // ── Firebase init ────────────────────────────────────────────────────────────
-const firebaseApp = initializeApp({
+// Vercel serverless may re-evaluate this module on warm invocations; cache the
+// Admin SDK on globalThis to avoid "default app already exists" errors. This is
+// the same pattern the Firebase Functions runtime uses internally.
+const firebaseApp = globalThis.__arcadeFirebaseApp ||= initializeApp({
   credential: cert({
     projectId: process.env.FIREBASE_PROJECT_ID,
     privateKeyId: process.env.FIREBASE_PRIVATE_KEY_ID,
@@ -17,7 +20,7 @@ const firebaseApp = initializeApp({
     clientId: process.env.FIREBASE_CLIENT_ID,
   }),
 });
-const db = getFirestore(firebaseApp);
+const db = globalThis.__arcadeDb ||= getFirestore(firebaseApp);
 
 // Persist sessions in Firestore so they survive server restarts.
 // The store lives in ./session-store.js and is a small custom express-session
@@ -197,78 +200,50 @@ function slotIsPlayable(slot) {
   return (slot.members || []).length >= cap;
 }
 
-// ── Head-of-queue readiness timer ────────────────────────────────────────────
+// ── Head-of-queue readiness deadline ────────────────────────────────────────
 // When a slot becomes the head of the queue, the player(s) have READY_TTL_MS
 // to confirm they're ready ("Start now"). If they don't, the slot is auto-voided
 // and the queue advances. They can also extend once by EXTEND_TTL_MS.
+//
+// In the previous (long-running) runtime, auto-void was driven by an in-process
+// Map<gameId, Map<slotId, NodeJS.Timeout>> and a setTimeout per slot. On Vercel
+// serverless that map is empty between invocations, so we use a lazy-void
+// model: getHeadSlotLive (below) is called on every head-touching user request,
+// and any time the head's readyDeadline has passed it voids the slot on the
+// spot. A small GET /api/tick endpoint walks every game and calls
+// getHeadSlotLive on each; the client polls it every 30s while a queue page
+// is open, so the cabinet's always-on browser acts as the "scheduler." No
+// Vercel Cron or external scheduler required (which keeps the project on
+// the Hobby plan).
+//
+// Trade-off: a queue with NO open browsers sits un-voided until the next
+// player loads the page. For an arcade app this is fine — the cabinet
+// screen is always on, and players load the page from their phones to join.
 
 const READY_TTL_MS = 60 * 1000;     // 60 seconds
 const EXTEND_TTL_MS = 120 * 1000;   // 2 minutes
 
-// In-process map of pending auto-void timers, keyed by (gameId, slotId).
-// Module-scoped — rehydrated from Firestore on startup (see rehydrateHeadTimers).
-const headTimers = new Map(); // gameId -> Map<slotId, NodeJS.Timeout>
-
-function clearHeadTimer(gameId, slotId) {
-  const gameTimers = headTimers.get(gameId);
-  if (!gameTimers) return;
-  const t = gameTimers.get(slotId);
-  if (t) clearTimeout(t);
-  gameTimers.delete(slotId);
-  if (gameTimers.size === 0) headTimers.delete(gameId);
-}
-
-function scheduleHeadTimer(gameId, slotId, delayMs) {
-  clearHeadTimer(gameId, slotId);
-  let gameTimers = headTimers.get(gameId);
-  if (!gameTimers) {
-    gameTimers = new Map();
-    headTimers.set(gameId, gameTimers);
-  }
-  const t = setTimeout(async () => {
-    clearHeadTimer(gameId, slotId);
-    try {
-      // Lazy double-check: only void if this slot is still the head AND its
-      // deadline has actually passed. Guards against races where the slot was
-      // confirmed/extended/left between scheduling and firing.
-      const head = await getHeadSlot(gameId);
-      if (head && head.id === slotId && head.readyDeadline
-          && head.readyDeadline.toMillis() <= Date.now()) {
-        await db.collection('games').doc(gameId)
-          .collection('queue').doc(slotId).delete();
-        // Promote the new head (if any) — also stamps its readyDeadline + arms its timer.
-        await stampAndScheduleNewHead(gameId);
-      }
-    } catch (err) {
-      console.error('head timer void failed:', err);
-    }
-  }, delayMs);
-  gameTimers.set(slotId, t);
-}
-
-// Sets readyDeadline = now + delayMs on a slot and arms the auto-void timer.
-// No-op if the ref is null. Preserves extensionUsed; extensionUsed is the user's
-// committed state and only the explicit /queue/extend route should ever flip it.
+// Sets readyDeadline = now + delayMs on a slot. The deadline is the single
+// source of truth for "is this head expired?" — the cron handler enforces it.
+// No-op if the ref is null. Preserves extensionUsed; only the explicit
+// /queue/extend route should ever flip it.
 async function stampReadyDeadline(slotRef, gameId, slotId, delayMs = READY_TTL_MS) {
   if (!slotRef) return;
   await slotRef.update({ readyDeadline: new Date(Date.now() + delayMs) });
-  scheduleHeadTimer(gameId, slotId, delayMs);
 }
 
-// Looks up the current head, stamps it with a fresh readyDeadline, and arms a
-// timer. Called whenever a head slot is removed (done, leave-with-empty, auto-void).
-// Half-filled duets get no timer — the slot sits there waiting for its partner
-// to join, and the timer will only be stamped when a full slot becomes the head
-// (either via auto-pair/invite-consume on the head itself, or via this function
-// after the half-filled head is finally filled or removed).
+// Looks up the current head and stamps it with a fresh readyDeadline. Called
+// whenever a head slot is removed (done, leave-with-empty, auto-void).
+// Half-filled duets get no deadline — the slot sits there waiting for its
+// partner to join, and a deadline will be stamped when a full slot becomes
+// the head (via auto-pair, invite-consume, or this function after the
+// half-filled head is finally filled or removed).
 async function stampAndScheduleNewHead(gameId) {
   const head = await getHeadSlot(gameId);
   if (!head) return;
   if (!slotIsPlayable(head)) {
-    // Half-filled duet head — clear any straggler timer (defense in depth) and
-    // bail. The slot has no readyDeadline in Firestore, so getHeadSlotLive
-    // won't try to void it on the next read.
-    clearHeadTimer(gameId, head.id);
+    // Half-filled duet head — bail. The slot has no readyDeadline in Firestore,
+    // so getHeadSlotLive and the cron won't try to void it on the next read/tick.
     return;
   }
   const ref = db.collection('games').doc(gameId).collection('queue').doc(head.id);
@@ -276,18 +251,16 @@ async function stampAndScheduleNewHead(gameId) {
   // get a free fresh extension. (Resetting would let a user re-extend on every
   // promotion, which is the wrong behavior — extend is per-attempt, not per-promotion.)
   await ref.update({ readyDeadline: new Date(Date.now() + READY_TTL_MS) });
-  scheduleHeadTimer(gameId, head.id, READY_TTL_MS);
 }
 
 // Lazy-check wrapper around getHeadSlot. If the head's readyDeadline has
 // already passed, void it on the spot and recurse on the new head. This is the
-// safety net for cases where a timer should have fired but didn't (e.g. server
-// restart between scheduling and firing).
+// safety net for the window between the deadline passing and the next cron
+// tick — it also serves any user request that happens to be in flight.
 async function getHeadSlotLive(gameId) {
   const head = await getHeadSlot(gameId);
   if (head && head.readyDeadline && head.readyDeadline.toMillis() <= Date.now()) {
     await db.collection('games').doc(gameId).collection('queue').doc(head.id).delete();
-    clearHeadTimer(gameId, head.id);
     await stampAndScheduleNewHead(gameId);
     return getHeadSlotLive(gameId);
   }
@@ -401,7 +374,6 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
       if (head && head.id === slotDoc.id) {
         await db.collection('games').doc(gameId).collection('queue').doc(slotDoc.id)
           .update({ readyDeadline: new Date(Date.now() + READY_TTL_MS) });
-        scheduleHeadTimer(gameId, slotDoc.id, READY_TTL_MS);
       }
       return res.json({ success: true, joined: 'invite', slotId: slotDoc.id });
     }
@@ -426,11 +398,12 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
       // (avoids having to handle "field missing" downstream).
       extensionUsed: false,
     };
-    // Only stamp a readyDeadline + arm a timer if the slot is actually playable.
-    // A half-filled duet (first joiner of a 'duet' or 'invite' formation) has
-    // nothing to confirm yet — the readiness timer will start later, when the
-    // partner joins and the slot fills. A solo-on-duet-cab is fully playable
-    // (mode: 'solo'), and a solo game is trivially playable, so both stamp.
+    // Only stamp a readyDeadline if the slot is actually playable. A
+    // half-filled duet (first joiner of a 'duet' or 'invite' formation) has
+    // nothing to confirm yet — the readiness deadline will be stamped later,
+    // when the partner joins and the slot fills. A solo-on-duet-cab is fully
+    // playable (mode: 'solo'), and a solo game is trivially playable, so both
+    // stamp immediately. The cron + getHeadSlotLive will enforce the deadline.
     const newSlotIsPlayable = isSoloOnDuetCab || !isDuet;
     if (newSlotIsPlayable) {
       newSlot.readyDeadline = new Date(Date.now() + READY_TTL_MS);
@@ -453,15 +426,13 @@ app.post('/api/games/:gameId/queue/join', requireAuth, async (req, res) => {
         // Preserves extensionUsed: auto-pairing is not a manual extension.
         await db.collection('games').doc(gameId).collection('queue').doc(head.id)
           .update({ readyDeadline: new Date(Date.now() + READY_TTL_MS) });
-        scheduleHeadTimer(gameId, head.id, READY_TTL_MS);
         return res.json({ success: true, joined: 'auto_pair', slotId: head.id });
       }
     }
 
     const newDocRef = await queueRef.add(newSlot);
-    if (newSlotIsPlayable) {
-      scheduleHeadTimer(gameId, newDocRef.id, READY_TTL_MS);
-    }
+    // newSlotIsPlayable already wrote readyDeadline into newSlot (above) when the
+    // slot was created; the cron + getHeadSlotLive will enforce it from here.
     return res.json({
       success: true,
       joined: isSoloOnDuetCab ? 'solo' : 'new_slot',
@@ -487,16 +458,10 @@ app.post('/api/games/:gameId/queue/leave', requireAuth, async (req, res) => {
       if ((data.members || []).some(m => m.userId === userId)) {
         const remaining = (data.members || []).filter(m => m.userId !== userId);
         if (remaining.length === 0) {
-          // Slot is being deleted. If it was the head, clear its timer and
-          // stamp the new head (if any). We clear unconditionally — the slot
-          // won't exist after the delete, and the timer map only ever has
-          // entries for live slots.
-          clearHeadTimer(gameId, slotDoc.id);
+          // Slot is being deleted. If it was the head, stamp the new head (if
+          // any) so it gets a fresh readyDeadline. The deadline is the source
+          // of truth — no in-process timer to clear.
           await slotDoc.ref.delete();
-          // Promote the new head (if any) — also stamps readyDeadline and arms
-          // its timer. This is the only way the next player learns the slot
-          // is theirs; otherwise the timer map is empty and the new head sits
-          // unadvertised.
           await stampAndScheduleNewHead(gameId);
         } else {
           await slotDoc.ref.update({ members: remaining });
@@ -565,9 +530,8 @@ app.post('/api/games/:gameId/queue/done', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Only the current player can mark done' });
     }
 
-    clearHeadTimer(gameId, head.id);
     await db.collection('games').doc(gameId).collection('queue').doc(head.id).delete();
-    // Promote the new head (if any) — stamps readyDeadline and arms its timer.
+    // Promote the new head (if any) — stamps its readyDeadline.
     await stampAndScheduleNewHead(gameId);
     res.json({ success: true });
   } catch (err) {
@@ -615,7 +579,7 @@ app.post('/api/games/:gameId/queue/invite', requireAuth, async (req, res) => {
 });
 
 // POST /api/games/:gameId/queue/confirm-ready
-// Any member of the head slot can call this to clear the readiness timer and
+// Any member of the head slot can call this to clear the readiness deadline and
 // transition the slot to 'playing'. Has the same effect as the old "I've Started!"
 // button in PlayerControls but is the canonical way the readiness banner works.
 app.post('/api/games/:gameId/queue/confirm-ready', requireAuth, async (req, res) => {
@@ -636,11 +600,11 @@ app.post('/api/games/:gameId/queue/confirm-ready', requireAuth, async (req, res)
       return res.status(409).json({ error: 'slot_not_full', message: 'Waiting for your partner to join.' });
     }
     if (head.readyDeadline && head.readyDeadline.toMillis() <= Date.now()) {
-      // Race: the timer fired between getHeadSlotLive and here. The slot is
-      // already deleted; surface that as slot_expired.
+      // Race: the deadline passed (and the slot may have been voided by the
+      // cron or getHeadSlotLive) between the read and here. Surface as
+      // slot_expired.
       return res.status(410).json({ error: 'slot_expired' });
     }
-    clearHeadTimer(gameId, head.id);
     await db.collection('games').doc(gameId)
       .collection('queue').doc(head.id)
       .update({ status: 'playing', readyDeadline: null });
@@ -665,7 +629,7 @@ app.post('/api/games/:gameId/queue/extend', requireAuth, async (req, res) => {
     if (!(head.members || []).some(m => m.userId === userId)) {
       return res.status(403).json({ error: 'Only the current player can extend' });
     }
-    // Defense in depth: a half-filled duet has no readiness timer to extend.
+    // Defense in depth: a half-filled duet has no readiness deadline to extend.
     // Mirrors the confirm-ready guard.
     if (!slotIsPlayable(head)) {
       return res.status(409).json({ error: 'slot_not_full', message: 'Waiting for your partner to join.' });
@@ -674,7 +638,6 @@ app.post('/api/games/:gameId/queue/extend', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'extension_already_used' });
     }
     const newDeadline = new Date(Date.now() + EXTEND_TTL_MS);
-    clearHeadTimer(gameId, head.id);
     await db.collection('games').doc(gameId)
       .collection('queue').doc(head.id)
       .update({
@@ -682,7 +645,6 @@ app.post('/api/games/:gameId/queue/extend', requireAuth, async (req, res) => {
         extensionUsed: true,
         extendedDeadline: newDeadline,
       });
-    scheduleHeadTimer(gameId, head.id, EXTEND_TTL_MS);
     res.json({ success: true, readyDeadline: newDeadline });
   } catch (err) {
     console.error(err);
@@ -746,45 +708,27 @@ app.post('/api/games', async (req, res) => {
   }
 });
 
-// ── Start ────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🎮 Arcade Queue server listening on 0.0.0.0:${PORT}`);
-});
-
-// Rehydrate readiness timers from Firestore on startup. The in-process timer
-// map is module-scoped and empty after a restart; this scan rebuilds it from
-// the live queue subcollections. Without this, a slot whose 60s window is
-// still in flight at the moment of a server restart would silently sit
-// un-voided until the next user-triggered request hit getHeadSlotLive.
-async function rehydrateHeadTimers() {
+// GET /api/tick — lazy-void keepalive.
+// Cheap, unauthenticated. Walks every game and calls getHeadSlotLive, which
+// voids any head whose readyDeadline has passed. The client polls this on a
+// 30s interval while a queue page is open, so the cabinet's always-on browser
+// drives the auto-void in lieu of an external scheduler.
+app.get('/api/tick', async (req, res) => {
   try {
     const gamesSnap = await db.collection('games').get();
+    let games = 0;
     for (const gameDoc of gamesSnap.docs) {
-      const head = await getHeadSlot(gameDoc.id);
-      if (head && head.readyDeadline) {
-        // Defense in depth: even if a stale slot from a pre-fix deploy still
-        // has a readyDeadline on a half-filled duet, don't arm a timer for it.
-        // The next /queue/leave or /queue/done will fall through
-        // stampAndScheduleNewHead (which also gates on slotIsPlayable), so this
-        // case self-heals on the first head removal.
-        if (!slotIsPlayable(head)) {
-          clearHeadTimer(gameDoc.id, head.id);
-          continue;
-        }
-        const remaining = head.readyDeadline.toMillis() - Date.now();
-        if (remaining <= 0) {
-          // Already expired during the restart — void it now and stamp the new head.
-          await db.collection('games').doc(gameDoc.id)
-            .collection('queue').doc(head.id).delete();
-          await stampAndScheduleNewHead(gameDoc.id);
-        } else {
-          scheduleHeadTimer(gameDoc.id, head.id, remaining);
-        }
-      }
+      games += 1;
+      await getHeadSlotLive(gameDoc.id);
     }
+    res.json({ ok: true, games });
   } catch (err) {
-    console.error('rehydrateHeadTimers failed:', err);
+    console.error('tick failed:', err);
+    res.status(500).json({ error: 'tick_failed' });
   }
-}
-rehydrateHeadTimers();
+});
+
+// ── Export ──────────────────────────────────────────────────────────────────
+// Vercel invokes the exported function with the Node-style (req, res) pair.
+// No app.listen() — the serverless runtime is request-scoped.
+module.exports = app;

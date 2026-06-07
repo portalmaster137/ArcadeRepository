@@ -76,3 +76,11 @@ COPY --from=client-build /repo/client/dist ./client/dist
 EXPOSE 3001
 USER node
 CMD ["node", "server/index.js"]
+
+# ── Stage 4: final Caddy image ──────────────────────────────────────────────
+# Serves the built SPA and reverse-proxies the api. Both static and dynamic
+# content are container-internal: only ports 80 and 443 are published.
+FROM caddy:2-alpine AS caddy
+WORKDIR /srv
+COPY --from=client-build /repo/client/dist ./
+COPY Caddyfile /etc/caddy/Caddyfile

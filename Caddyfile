@@ -1,9 +1,26 @@
-app.porta137.com {
-    root * /data/ArcadeQueueClient
+# ─────────────────────────────────────────────────────────────────────────────
+# Caddyfile — ArcadeQueue
+#
+# Both vhosts read their domain root from the `DOMAIN` env var (set in
+# docker-compose.yml). Caddy's `{$VAR}` syntax interpolates at startup.
+#
+# app.${DOMAIN}  →  SPA (static files, SPA fallback to /index.html)
+# api.${DOMAIN}  →  reverse-proxy to the `api` container on port 3001
+#                   (Docker internal network, no host port)
+# ─────────────────────────────────────────────────────────────────────────────
+
+{
+    # Required for Let's Encrypt to email you about expiring certs.
+    email portalmaster137@gmail.com
+}
+
+# ── SPA ──
+app.{$DOMAIN} {
+    root * /srv
     encode gzip zstd
 
     # SPA fallback: any path that doesn't match a real file in /srv →
-    # index.html. Vite's content-addressed assets live under /assets/ and
+    # /index.html. Vite's content-addressed assets live under /assets/ and
     # always match first, so the fallback only kicks in for client routes.
     try_files {path} {path}/ /index.html
 
@@ -15,7 +32,6 @@ app.porta137.com {
     # would break deploys.
     header Cache-Control "no-cache"
     header X-Content-Type-Options "nosniff"
-    header Access-Control-Allow-Origin "https://api.porta137.com"
 
     # Vite's /assets/* filenames are content-hashed, so they're safe to
     # cache forever. This is the standard SPA cache strategy.
@@ -24,12 +40,38 @@ app.porta137.com {
 }
 
 # ── API ──
-api.porta137.com {
-        header {
-                Access-Control-Allow-Origin "https://app.porta137.com"
-                Access-Control-Allow-Credentials true
-        }
-    reverse_proxy 127.0.0.1:39170 {
-        header_down -Access-Control-Allow-Origin
+api.{$DOMAIN} {
+    reverse_proxy api:3001 {
+        # Pass the original Host/XFP through so express-session's
+        # `req.secure` check (and the trust-proxy chain) sees the real
+        # scheme as https. Without X-Forwarded-Proto https, the session
+        # cookie is set without `secure`, and SameSite=None silently
+        # drops it on cross-subdomain requests.
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # CORS is handled by the api's express `cors()` middleware
+        # (server/index.js), which allow-lists `app.${DOMAIN}`. Don't
+        # duplicate it here — the source of truth is the server.
     }
+}
+
+# ── ACME http-01 challenge (port 80, plain HTTP) ────────────────────────────
+# LE's http-01 validator sends a plain HTTP request to /.well-known/... on
+# port 80. Caddy's auto-HTTPS engine would 308 that to HTTPS, which LE
+# refuses to follow → cert issuance fails. Serve the challenge directly on
+# a dedicated plain-HTTP listener that only matches the ACME path. Anything
+# else on port 80 (rare; the SPA is HTTPS-only) falls through to the
+# standard 308 to HTTPS redirect.
+http://app.{$DOMAIN}, http://api.{$DOMAIN} {
+    @acme path /.well-known/acme-challenge/*
+    handle @acme {
+        root * /var/www/html
+        file_server
+    }
+    # Anything else on plain HTTP → 308 to HTTPS (Caddy's default for
+    # http:// vhosts with an https counterpart).
+    redir https://{host}{uri} permanent
 }

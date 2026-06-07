@@ -207,6 +207,23 @@ export default function QueuePage() {
     }
   }
 
+  // ── Lazy-void keepalive ──
+  // Hit the server's GET /api/tick every 30s so any head whose readiness
+  // deadline has passed is auto-voided, even when no one is interacting
+  // with the page. The server's getHeadSlotLive is what does the work; this
+  // is just the trigger. Mount cleanup clears the interval.
+  useEffect(() => {
+    const id = setInterval(() => {
+      api.tick().catch((err) => {
+        // Log but don't surface to the user — the lazy-void is best-effort
+        // and the next user action on the head will catch a missed deadline
+        // via getHeadSlotLive inside the queue routes.
+        console.warn('tick keepalive failed', err);
+      });
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
+
   if (authLoading || queueLoading) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1rem' }}>

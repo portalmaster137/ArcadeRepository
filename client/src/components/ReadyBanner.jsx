@@ -10,6 +10,17 @@ import { useToast } from './Toast';
  * passes the slot is auto-voided by the server; the banner goes away
  * reactively via the parent's onSnapshot subscription.
  *
+ * Layout:
+ *   - On mobile (<640px wide): single horizontal strip — icon, small
+ *     `mm:ss` countdown, two compact icon-buttons. The sticky banner takes
+ *     ~50px of vertical space so it doesn't eat the first viewport row.
+ *   - On wider viewports (>=640px): the original rich card — larger
+ *     countdown, full button text, the "APPROACH THE CABINET" headline.
+ *
+ * The mobile/desktop split is done with a single CSS @media block at the
+ * bottom of the component (media queries can't live in inline styles), with
+ * `!important` to override the inline defaults.
+ *
  * Props:
  *   - slot:           the head slot object (must have a readyDeadline Timestamp or Date)
  *   - gameId:         for the API call
@@ -84,23 +95,21 @@ export default function ReadyBanner({ slot, gameId, onConfirm, onExtend }) {
     }
   }
 
-  // When the countdown hits zero, the slot is about to be auto-voided by the
-  // server's setTimeout. We don't need to do anything reactive here — the
-  // parent's onSnapshot will deliver the slot-removal event and unmount this
-  // banner. The user just sees "time's up" briefly.
   const display = formatTime(secondsLeft);
   const lowTime = secondsLeft <= 10;
   const canExtend = !slot.extensionUsed;
 
   return (
     <div
-      className={lowTime ? 'pulse-pink' : 'pulse-cyan'}
+      className={`ready-banner ${lowTime ? 'pulse-pink' : 'pulse-cyan'}`}
       style={{
         position: 'sticky',
         top: 0,
         zIndex: 50,
-        padding: '1.25rem 1.5rem',
         marginBottom: '1.5rem',
+        // Mobile defaults: slim strip, single row.
+        padding: '0.6rem 0.85rem',
+        gap: '0.75rem',
         background: lowTime
           ? 'linear-gradient(135deg, rgba(255,45,120,0.18), rgba(180,79,255,0.18))'
           : 'linear-gradient(135deg, rgba(0,245,255,0.18), rgba(255,45,120,0.18))',
@@ -113,93 +122,129 @@ export default function ReadyBanner({ slot, gameId, onConfirm, onExtend }) {
           : '0 0 24px rgba(0,245,255,0.25)',
         display: 'flex',
         alignItems: 'center',
-        gap: '1.5rem',
-        flexWrap: 'wrap',
       }}
     >
-      {/* Headline + countdown */}
-      <div style={{ flex: '1 1 auto', minWidth: '200px' }}>
+      {/* Icon — always visible. */}
+      <div
+        aria-hidden="true"
+        className="ready-banner-icon"
+        style={{
+          fontSize: '1.1rem',
+          lineHeight: 1,
+          flex: '0 0 auto',
+        }}
+      >
+        ⚡
+      </div>
+
+      <div
+        className="ready-banner-text"
+        style={{ flex: '1 1 auto', minWidth: 0 }}
+      >
         <div
+          className="ready-banner-headline"
           style={{
             fontFamily: 'var(--font-display)',
-            fontSize: '0.65rem',
-            letterSpacing: '0.18em',
+            fontSize: '0.6rem',
+            letterSpacing: '0.15em',
             color: 'var(--cyan)',
-            marginBottom: '0.4rem',
+            marginBottom: '0.2rem',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
         >
-          ⚡ IT'S YOUR TURN — APPROACH THE CABINET
+          IT'S YOUR TURN
         </div>
         <div
+          className="ready-banner-timer"
           style={{
-            fontSize: '2.2rem',
+            fontSize: '1.4rem',
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
             color: lowTime ? 'var(--pink)' : 'var(--cyan)',
             textShadow: lowTime
-              ? '0 0 14px rgba(255,45,120,0.6)'
-              : '0 0 14px rgba(0,245,255,0.5)',
+              ? '0 0 12px rgba(255,45,120,0.6)'
+              : '0 0 12px rgba(0,245,255,0.5)',
             lineHeight: 1,
             fontVariantNumeric: 'tabular-nums',
           }}
         >
           {display}
         </div>
-        <div
-          style={{
-            fontSize: '0.8rem',
-            color: 'var(--muted)',
-            marginTop: '0.35rem',
-          }}
-        >
-          {lowTime
-            ? "Hurry! Your spot will be voided at zero."
-            : 'Press start now, or extend once if you need more time.'}
-        </div>
       </div>
 
-      {/* Action buttons */}
       <div
+        className="ready-banner-actions"
         style={{
           display: 'flex',
-          flexDirection: 'column',
-          gap: '0.5rem',
+          gap: '0.4rem',
           flex: '0 0 auto',
         }}
       >
         <button
-          className="btn btn-solid-cyan"
-          style={{ justifyContent: 'center', minWidth: '180px' }}
+          className="btn btn-solid-cyan ready-banner-btn"
+          style={{ padding: '0.4rem 0.6rem', minHeight: 0 }}
           onClick={handleConfirm}
           disabled={busy}
+          aria-label="Start now"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-          Start now
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+          <span className="ready-banner-btn-short">Start</span>
+          <span className="ready-banner-btn-long">Start now</span>
         </button>
         {canExtend ? (
           <button
-            className="btn btn-yellow"
-            style={{ justifyContent: 'center', minWidth: '180px' }}
+            className="btn btn-yellow ready-banner-btn"
+            style={{ padding: '0.4rem 0.6rem', minHeight: 0 }}
             onClick={handleExtend}
             disabled={busy}
+            aria-label="Extend by 2 minutes"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-            I'm on my way (+2 min)
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+            <span className="ready-banner-btn-short">+2m</span>
+            <span className="ready-banner-btn-long">I'm on my way (+2 min)</span>
           </button>
-        ) : (
-          <div
-            style={{
-              fontSize: '0.7rem',
-              color: 'var(--muted)',
-              textAlign: 'center',
-              fontStyle: 'italic',
-              padding: '0.4rem',
-            }}
-          >
-            Extension already used
-          </div>
-        )}
+        ) : null}
       </div>
+
+      <style>{`
+        /* On wide viewports (>=640px), grow the banner back into a rich card.
+           Inline styles in JSX set the mobile defaults; the !important here
+           is what lets media queries override them. */
+        @media (min-width: 640px) {
+          .ready-banner {
+            padding: 1.25rem 1.5rem !important;
+            gap: 1.5rem !important;
+          }
+          .ready-banner .ready-banner-icon {
+            font-size: 1.4rem !important;
+          }
+          .ready-banner .ready-banner-headline {
+            font-size: 0.65rem !important;
+            letter-spacing: 0.18em !important;
+            white-space: normal !important;
+            margin-bottom: 0.4rem !important;
+          }
+          .ready-banner .ready-banner-timer {
+            font-size: 2.2rem !important;
+          }
+          .ready-banner .ready-banner-btn {
+            padding: 0.6rem 1rem !important;
+          }
+          /* Swap the short button labels for the full labels on wide viewports. */
+          .ready-banner .ready-banner-btn-short {
+            display: none !important;
+          }
+          .ready-banner .ready-banner-btn-long {
+            display: inline !important;
+          }
+        }
+        /* On mobile, only the short labels show. */
+        .ready-banner .ready-banner-btn-long {
+          display: none;
+        }
+      `}</style>
     </div>
   );
 }

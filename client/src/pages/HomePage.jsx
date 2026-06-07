@@ -1,17 +1,13 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import QRCode from '../components/QRCode';
 import { useGames } from '../hooks/useGames';
 import { useCabinetGroups } from '../hooks/useCabinetGroups';
 
 function GroupCard({ group, games }) {
   const queueUrl = `${window.location.origin}/queue/group/${group.id}`;
-  const [copied, setCopied] = useState(false);
 
   function copyLink() {
     navigator.clipboard.writeText(queueUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -22,52 +18,39 @@ function GroupCard({ group, games }) {
           fontSize: '0.6rem',
           letterSpacing: '0.2em',
           color: 'var(--muted)',
-          marginBottom: '0.5rem',
+          marginBottom: '0.4rem',
         }}>
           {group.location}
         </div>
       )}
       <div style={{
         fontFamily: 'var(--font-display)',
-        fontSize: '1.4rem',
+        fontSize: '1.15rem',
         fontWeight: 900,
         color: 'var(--cyan)',
         textShadow: '0 0 16px rgba(0,245,255,0.4)',
-        marginBottom: '0.5rem',
+        marginBottom: '0.35rem',
         letterSpacing: '0.05em',
+        lineHeight: 1.15,
       }}>
         {group.name}
       </div>
       <div style={{
         fontFamily: 'var(--font-display)',
-        fontSize: '0.6rem',
+        fontSize: '0.55rem',
         color: 'var(--pink)',
         letterSpacing: '0.12em',
-        marginBottom: '1.5rem',
+        marginBottom: '1rem',
       }}>
         {games.length} CABINET{games.length === 1 ? '' : 'S'} · DUET
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
-        <QRCode value={queueUrl} size={180} />
-      </div>
-
-      <div style={{
-        fontFamily: 'var(--font-display)',
-        fontSize: '0.55rem',
-        letterSpacing: '0.1em',
-        color: 'var(--muted)',
-        marginBottom: '1rem',
-      }}>
-        SCAN TO JOIN QUEUE
-      </div>
-
-      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
         <Link to={`/queue/group/${group.id}`} className="btn btn-solid-cyan" style={{ textDecoration: 'none' }}>
           Open Queue
         </Link>
-        <button className="btn btn-ghost" onClick={copyLink}>
-          {copied ? '✓ Copied!' : 'Copy Link'}
+        <button className="btn btn-ghost" onClick={copyLink} title={queueUrl}>
+          Copy Link
         </button>
       </div>
     </div>
@@ -76,12 +59,9 @@ function GroupCard({ group, games }) {
 
 function GameCard({ game }) {
   const queueUrl = `${window.location.origin}/queue/${game.id}`;
-  const [copied, setCopied] = useState(false);
 
   function copyLink() {
     navigator.clipboard.writeText(queueUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   const cabinetBits = [
@@ -97,54 +77,41 @@ function GameCard({ game }) {
           fontSize: '0.6rem',
           letterSpacing: '0.2em',
           color: 'var(--muted)',
-          marginBottom: '0.5rem',
+          marginBottom: '0.4rem',
         }}>
           {cabinetBits}
         </div>
       )}
       <div style={{
         fontFamily: 'var(--font-display)',
-        fontSize: '1.4rem',
+        fontSize: '1.15rem',
         fontWeight: 900,
         color: 'var(--cyan)',
         textShadow: '0 0 16px rgba(0,245,255,0.4)',
-        marginBottom: game.subtitle ? '0.25rem' : '1.5rem',
+        marginBottom: game.subtitle ? '0.2rem' : '1rem',
         letterSpacing: '0.05em',
+        lineHeight: 1.15,
       }}>
         {game.name}
       </div>
       {game.subtitle && (
         <div style={{
           fontFamily: 'var(--font-display)',
-          fontSize: '0.7rem',
+          fontSize: '0.6rem',
           color: 'var(--pink)',
           letterSpacing: '0.12em',
-          marginBottom: '1.5rem',
+          marginBottom: '1rem',
         }}>
           {game.subtitle}
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
-        <QRCode value={queueUrl} size={180} />
-      </div>
-
-      <div style={{
-        fontFamily: 'var(--font-display)',
-        fontSize: '0.55rem',
-        letterSpacing: '0.1em',
-        color: 'var(--muted)',
-        marginBottom: '1rem',
-      }}>
-        SCAN TO JOIN QUEUE
-      </div>
-
-      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
         <Link to={`/queue/${game.id}`} className="btn btn-solid-cyan" style={{ textDecoration: 'none' }}>
           Open Queue
         </Link>
-        <button className="btn btn-ghost" onClick={copyLink}>
-          {copied ? '✓ Copied!' : 'Copy Link'}
+        <button className="btn btn-ghost" onClick={copyLink} title={queueUrl}>
+          Copy Link
         </button>
       </div>
     </div>
@@ -176,24 +143,24 @@ export default function HomePage() {
   const loading = gamesLoading || groupsLoading;
 
   return (
-    <main style={{ flex: 1, maxWidth: '720px', margin: '0 auto', padding: '3rem 1.5rem', width: '100%' }}>
+    <main style={{ flex: 1, maxWidth: '960px', margin: '0 auto', padding: '2.5rem 1.5rem', width: '100%' }}>
       {/* Hero */}
-      <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+      <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
         <div style={{
           fontFamily: 'var(--font-display)',
           fontSize: '0.65rem',
           letterSpacing: '0.25em',
           color: 'var(--pink)',
-          marginBottom: '1rem',
+          marginBottom: '0.75rem',
         }}>
           ARCADE QUEUE SYSTEM
         </div>
         <h1 style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 900,
-          fontSize: 'clamp(2rem, 8vw, 3.5rem)',
+          fontSize: 'clamp(1.8rem, 6vw, 2.8rem)',
           lineHeight: 1,
-          marginBottom: '1rem',
+          marginBottom: '0.75rem',
           letterSpacing: '0.03em',
         }}>
           <span className="neon-cyan">NO MORE</span>
@@ -202,12 +169,12 @@ export default function HomePage() {
           <br />
           <span className="neon-pink">THE CAB</span>
         </h1>
-        <p style={{ color: 'var(--muted)', maxWidth: '360px', margin: '0 auto', lineHeight: 1.7 }}>
-          Scan the QR code at the cabinet to join the queue. You'll get notified when your turn is coming up.
+        <p style={{ color: 'var(--muted)', maxWidth: '420px', margin: '0 auto', lineHeight: 1.6 }}>
+          Pick a cabinet below to see the live queue, or scan the QR code at the cab to join on your phone.
         </p>
       </div>
 
-      {/* Game / Group QR cards */}
+      {/* Game / Group cards */}
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
           <div className="spinner" />
@@ -218,7 +185,12 @@ export default function HomePage() {
           No games registered yet. Add one via <code>POST /api/games</code>.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', marginBottom: '2rem' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+          gap: '1rem',
+          marginBottom: '2.5rem',
+        }}>
           {cards.map(card => (
             card.type === 'group'
               ? <GroupCard key={`group-${card.group.id}`} group={card.group} games={card.games} />
@@ -234,12 +206,12 @@ export default function HomePage() {
           fontSize: '0.6rem',
           letterSpacing: '0.2em',
           color: 'var(--muted)',
-          marginBottom: '1.5rem',
+          marginBottom: '1.25rem',
           textAlign: 'center',
         }}>
           HOW IT WORKS
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
           {[
             { icon: '📱', title: 'Scan', desc: 'Scan the QR code at the cabinet with your phone' },
             { icon: '🎮', title: 'Queue Up', desc: 'Log in with Discord and join the queue in one tap' },
@@ -250,21 +222,21 @@ export default function HomePage() {
               background: 'var(--surface)',
               border: '1px solid rgba(0,245,255,0.1)',
               borderRadius: '8px',
-              padding: '1.25rem',
+              padding: '1rem',
               textAlign: 'center',
             }}>
-              <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>{step.icon}</div>
+              <div style={{ fontSize: '1.6rem', marginBottom: '0.4rem' }}>{step.icon}</div>
               <div style={{
                 fontFamily: 'var(--font-display)',
                 fontSize: '0.65rem',
                 fontWeight: 700,
                 color: 'var(--cyan)',
                 letterSpacing: '0.1em',
-                marginBottom: '0.4rem',
+                marginBottom: '0.3rem',
               }}>
                 {step.title.toUpperCase()}
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>{step.desc}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.4 }}>{step.desc}</div>
             </div>
           ))}
         </div>

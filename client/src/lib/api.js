@@ -2,6 +2,11 @@ const BASE = import.meta.env.VITE_API_URL || '';
 
 async function apiFetch(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    // `include` is required so the browser sends the __session cookie on
+    // cross-origin XHR (app.porta137.com → api.porta137.com). With the
+    // default `same-origin`, the cookie would be silently dropped on every
+    // API call and /auth/me would always return user: null.
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });

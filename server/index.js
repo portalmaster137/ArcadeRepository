@@ -76,13 +76,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors({
-  // `credentials: false` means we don't echo back `Access-Control-Allow-Credentials`,
-  // so the browser will send the `__session` cookie based on its `SameSite=None;
-  // Secure` policy alone (no `credentials: 'include'` on the client side either).
-  // An explicit list (not `*`) is required once you set `credentials: true`; with
-  // `false` either works, but a list makes the allowlist obvious in source.
+  // `credentials: true` echoes back `Access-Control-Allow-Credentials: true`,
+  // which the client needs because it sets `credentials: 'include'` on every
+  // fetch so the `__session` cookie is sent on cross-origin XHR
+  // (app.porta137.com → api.porta137.com). An explicit list (not `*`) is
+  // REQUIRED once you turn this on — wildcard origins with credentials is
+  // forbidden by the CORS spec and the browser will reject the response.
   origin: ['https://app.porta137.com', 'https://api.porta137.com'],
-  credentials: false,
+  credentials: true,
 }));
 
 app.use(express.json());

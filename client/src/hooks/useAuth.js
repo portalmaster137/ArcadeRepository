@@ -24,11 +24,11 @@ export function useAuth() {
   }, [fetchMe]);
 
   const login = () => {
-    window.location.href = '/auth/discord';
+    window.location.href = `${import.meta.env.VITE_API_URL}/auth/discord`;
   };
 
   const logout = () => {
-    window.location.href = '/auth/logout';
+    window.location.href = `${import.meta.env.VITE_API_URL}/auth/logout`;
   };
 
   return { user, loading, login, logout, refetch: fetchMe };

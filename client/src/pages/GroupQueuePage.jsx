@@ -234,7 +234,7 @@ export default function GroupQueuePage() {
 
   async function joinCabinet(gameId, formation) {
     if (!user) {
-      window.location.href = '/auth/discord';
+      window.location.href = `${import.meta.env.VITE_API_URL}/auth/discord`;
       return;
     }
     setJoining(true);

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from './Toast';
+import QRCode from './QRCode';
 
 export default function PlayerControls({ gameId, userQueueEntry, queue, playersPerSlot = 1, onUpdate }) {
   const [loading, setLoading] = useState(false);
@@ -29,6 +30,10 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
   const hasOpenInviteSeat = !!mySlot
     && mySlot.inviteToken
     && (mySlot.members?.length || 0) < playersPerSlot;
+
+  const inviteLink = hasOpenInviteSeat
+    ? `${window.location.origin}/queue/${gameId}?invite=${mySlot.inviteToken}`
+    : null;
 
   async function handle(action) {
     setLoading(true);
@@ -60,9 +65,8 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
   }
 
   async function copyInviteLink() {
-    if (!mySlot?.inviteToken) return;
-    const link = `${window.location.origin}/queue/${gameId}?invite=${mySlot.inviteToken}`;
-    navigator.clipboard.writeText(link);
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink);
     setCopiedInvite(true);
     setTimeout(() => setCopiedInvite(false), 2000);
   }
@@ -110,6 +114,22 @@ export default function PlayerControls({ gameId, userQueueEntry, queue, playersP
           <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '0.75rem' }}>
             Share this link with the friend you want to play with. They'll join your slot.
           </p>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
+            <QRCode value={inviteLink} size={160} />
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: '0.8rem',
+              color: 'var(--muted)',
+              wordBreak: 'break-all',
+              textAlign: 'center',
+              userSelect: 'all',
+              marginBottom: '0.75rem',
+            }}
+          >
+            {inviteLink}
+          </div>
           <button
             className="btn btn-cyan w-full"
             style={{ justifyContent: 'center' }}

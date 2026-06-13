@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { doc, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../hooks/useAuth';
@@ -9,6 +9,7 @@ import QueueEntry from '../components/QueueEntry';
 import PlayerControls from '../components/PlayerControls';
 import ReadyBanner from '../components/ReadyBanner';
 import WaitingForPartner from '../components/WaitingForPartner';
+import GuestModal from '../components/GuestModal';
 
 function CabinetSection({ game, user, userSlotId, onJoin, onLeave, joining, onUpdate }) {
   const queue = game.queue;
@@ -167,6 +168,11 @@ export default function GroupQueuePage() {
   const toast = useToast();
   const [joining, setJoining] = useState(false);
 
+  // Guest-modal state. `pendingJoinRef` remembers the (gameId, formation) pair
+  // the user picked before the modal interrupted the join flow.
+  const [guestModal, setGuestModal] = useState({ open: false });
+  const pendingJoinRef = useRef({ gameId: null, formation: 'open' });
+
   const [group, setGroup] = useState(null);
   const [groupLoading, setGroupLoading] = useState(true);
 
@@ -234,7 +240,10 @@ export default function GroupQueuePage() {
 
   async function joinCabinet(gameId, formation) {
     if (!user) {
-      window.location.href = `${import.meta.env.VITE_API_URL}/auth/discord`;
+      // Open the guest modal. Remember which cabinet + formation the user
+      // picked so we can resume the join once the modal completes.
+      pendingJoinRef.current = { gameId, formation };
+      setGuestModal({ open: true });
       return;
     }
     setJoining(true);
@@ -255,6 +264,13 @@ export default function GroupQueuePage() {
     } finally {
       setJoining(false);
     }
+  }
+
+  // Resume the join flow after the guest modal completes.
+  function handleGuestJoined() {
+    const { gameId, formation } = pendingJoinRef.current;
+    setGuestModal({ open: false });
+    if (gameId) joinCabinet(gameId, formation);
   }
 
   if (authLoading || groupLoading) {
@@ -394,11 +410,17 @@ export default function GroupQueuePage() {
           </div>
           {!user && (
             <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.75rem' }}>
-              You'll be asked to log in with Discord
+              Play as guest or log in with Discord
             </p>
           )}
         </div>
       )}
+
+      <GuestModal
+        open={guestModal.open}
+        onClose={() => setGuestModal({ open: false })}
+        onJoined={handleGuestJoined}
+      />
     </main>
   );
 }

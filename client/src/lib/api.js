@@ -17,6 +17,13 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   getMe: () => apiFetch('/auth/me'),
+  // Creates a guest player session. Body: { name }. Returns the new { user }.
+  // Idempotent — if the caller is already authenticated, the existing user is
+  // returned without creating a new guest doc. See server/index.js POST /auth/guest.
+  guestLogin: (name) => apiFetch('/auth/guest', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  }),
   getGames: () => apiFetch('/api/games'),
   getGroup: (groupId) => apiFetch(`/api/cabinet-groups/${groupId}`),
   getQueue: (gameId) => apiFetch(`/api/games/${gameId}/queue`),

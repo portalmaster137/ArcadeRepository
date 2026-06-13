@@ -31,5 +31,15 @@ export function useAuth() {
     window.location.href = `${import.meta.env.VITE_API_URL}/auth/logout`;
   };
 
-  return { user, loading, login, logout, refetch: fetchMe };
+  // POSTs to /auth/guest with a chosen name, then synchronously updates local
+  // user state so the caller (e.g. GuestModal) can immediately proceed with
+  // queue actions in the same tick — no waiting for a window-focus refetch.
+  const loginAsGuest = useCallback(async (name) => {
+    const { user } = await api.guestLogin(name);
+    setUser(user);
+    setLoading(false);
+    return user;
+  }, []);
+
+  return { user, loading, login, logout, loginAsGuest, refetch: fetchMe };
 }

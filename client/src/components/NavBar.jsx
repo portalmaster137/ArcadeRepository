@@ -65,6 +65,46 @@ export default function NavBar() {
             }}>
               {user.globalName}
             </span>
+            {user.isGuest && (
+              <>
+                <span
+                  title="You're playing as a guest. Your name and queue position are tied to this browser only."
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontSize: '0.5rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    color: 'var(--purple)',
+                    border: '1px solid var(--purple)',
+                    background: 'rgba(180, 79, 255, 0.12)',
+                    padding: '0.18rem 0.5rem',
+                    borderRadius: '2px',
+                  }}
+                >
+                  guest
+                </span>
+                <button
+                  onClick={login}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--muted)',
+                    fontFamily: 'var(--font-display)',
+                    fontSize: '0.55rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                    padding: '0.2rem 0.4rem',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--cyan)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--muted)'; }}
+                >
+                  Upgrade
+                </button>
+              </>
+            )}
             <button className="btn btn-ghost" style={{ padding: '0.4rem 0.9rem', fontSize: '0.6rem' }} onClick={logout}>
               Logout
             </button>

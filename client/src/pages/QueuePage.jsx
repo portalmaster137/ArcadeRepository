@@ -1,5 +1,5 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useQueue } from '../hooks/useQueue';
 import { api } from '../lib/api';
@@ -8,6 +8,7 @@ import QueueEntry from '../components/QueueEntry';
 import PlayerControls from '../components/PlayerControls';
 import ReadyBanner from '../components/ReadyBanner';
 import WaitingForPartner from '../components/WaitingForPartner';
+import GuestModal from '../components/GuestModal';
 
 // "Finishing soon" alert banner for the next-up player(s)
 function FinishingSoonAlert() {
@@ -97,12 +98,18 @@ function FormationPrompt({ onChoose, disabled }) {
 
 export default function QueuePage() {
   const { gameId } = useParams();
-  const { user, loading: authLoading, login } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { queue, game, loading: queueLoading } = useQueue(gameId);
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [joining, setJoining] = useState(false);
+
+  // Guest-modal state. `pendingFormationRef` remembers which formation the
+  // user was about to pick when the modal interrupted the join flow, so the
+  // close-then-join is unambiguous.
+  const [guestModal, setGuestModal] = useState({ open: false, intent: 'join' });
+  const pendingFormationRef = useRef('open');
 
   const playersPerSlot = game?.playersPerSlot || 1;
   const isDuetGame = playersPerSlot > 1;
@@ -149,8 +156,14 @@ export default function QueuePage() {
     : Math.ceil(queue.length / playersPerSlot) * 5;
 
   // ── Auto-consume invite token on first load ──
+  // Three branches:
+  //   - already queued: clear the ?invite= param, no action
+  //   - logged out + token present: open the GuestModal in 'invite' intent.
+  //     Once the modal completes, `user` updates, this effect re-runs, and
+  //     we fall into the consume branch below.
+  //   - logged in + token present + not queued: consume the token.
   useEffect(() => {
-    if (authLoading || !user || !game) return;
+    if (authLoading || !game) return;
     const token = searchParams.get('invite');
     if (!token || userEntry) {
       // Either no invite, or already queued — clear the query param.
@@ -159,6 +172,12 @@ export default function QueuePage() {
         next.delete('invite');
         setSearchParams(next, { replace: true });
       }
+      return;
+    }
+    if (!user) {
+      // Open the guest modal in invite mode. Don't clear the token yet —
+      // the effect re-fires after login and consumes it.
+      setGuestModal((prev) => prev.open ? prev : { open: true, intent: 'invite' });
       return;
     }
     // Attempt to join with the invite.
@@ -186,7 +205,13 @@ export default function QueuePage() {
   }, [authLoading, user, game, userEntry?.id]);
 
   async function joinQueue(formation = 'open') {
-    if (!user) return login();
+    if (!user) {
+      // Open the guest modal in 'join' intent. Remember the formation the
+      // user picked so we can resume the join once the modal completes.
+      pendingFormationRef.current = formation;
+      setGuestModal({ open: true, intent: 'join' });
+      return;
+    }
     setJoining(true);
     try {
       await api.joinQueue(gameId, { formation });
@@ -205,6 +230,17 @@ export default function QueuePage() {
     } finally {
       setJoining(false);
     }
+  }
+
+  // Resume the join flow after the guest modal completes. For 'join' intent
+  // we re-invoke joinQueue with the formation the user originally picked.
+  // For 'invite' intent, we close the modal and let the consume-invite
+  // effect (above) re-fire now that `user` is set.
+  function handleGuestJoined() {
+    const wasInvite = guestModal.intent === 'invite';
+    const formation = pendingFormationRef.current;
+    setGuestModal({ open: false, intent: 'join' });
+    if (!wasInvite) joinQueue(formation);
   }
 
   // ── Lazy-void keepalive ──
@@ -402,7 +438,7 @@ export default function QueuePage() {
           <FormationPrompt onChoose={joinQueue} disabled={joining} />
           {!user && (
             <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.75rem' }}>
-              You'll be asked to log in with Discord
+              Play as guest or log in with Discord
             </p>
           )}
         </div>
@@ -418,11 +454,18 @@ export default function QueuePage() {
           </button>
           {!user && (
             <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.75rem' }}>
-              You'll be asked to log in with Discord
+              Play as guest or log in with Discord
             </p>
           )}
         </div>
       )}
+
+      <GuestModal
+        open={guestModal.open}
+        intent={guestModal.intent}
+        onClose={() => setGuestModal({ open: false, intent: 'join' })}
+        onJoined={handleGuestJoined}
+      />
 
       <style>{`
         @keyframes pulse-yellow {
